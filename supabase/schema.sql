@@ -264,6 +264,50 @@ create table if not exists ot_requests (
 );
 
 -- ------------------------------------------------------------
+-- 17) chat_messages — the team rooms. Private rooms belong to one person.
+-- ------------------------------------------------------------
+create table if not exists chat_messages (
+  id         bigint generated always as identity primary key,
+  room       text        not null,                 -- ai | foh | kitchen | private
+  user_id    bigint      references app_users(id) on delete cascade,  -- owner of the thread for ai/private; sender elsewhere
+  is_ai      boolean     not null default false,
+  body       text        not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_messages_room_idx on chat_messages (room, created_at);
+
+-- ------------------------------------------------------------
+-- 18) outlet_memory — what the AI should know about this shop.
+-- ------------------------------------------------------------
+create table if not exists outlet_memory (
+  id         bigint generated always as identity primary key,
+  kind       text        not null default 'note',   -- dish | phrase | note
+  title      text        not null,
+  body       text,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 19) review_links + review_events — table QR codes for guest reviews.
+-- ------------------------------------------------------------
+create table if not exists review_links (
+  id         bigint generated always as identity primary key,
+  token      text        not null unique,
+  label      text        not null,
+  platform   text        not null default 'google',
+  review_url text,
+  gift       text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists review_events (
+  id         bigint generated always as identity primary key,
+  link_id    bigint      not null references review_links(id) on delete cascade,
+  rating     integer,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -286,6 +330,10 @@ alter table shift_types   enable row level security;
 alter table roster        enable row level security;
 alter table punches       enable row level security;
 alter table ot_requests   enable row level security;
+alter table chat_messages enable row level security;
+alter table outlet_memory enable row level security;
+alter table review_links  enable row level security;
+alter table review_events enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

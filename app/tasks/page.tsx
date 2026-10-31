@@ -4,6 +4,7 @@
 import { getRecords, todayISO } from '@/lib/records'
 import Empty from '@/app/_components/Empty'
 import Stat from '@/app/_components/Stat'
+import { DoneButton, NewTask } from './TaskControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,9 @@ export default async function Tasks() {
   const all = await getRecords()
   const rows = all
     .filter(r => r.category === 'task' && (r.status || '').toLowerCase() !== 'reversed')
-    .sort((a, b) => ((a.due_date ?? '9999') < (b.due_date ?? '9999') ? -1 : 1))
+    .sort((a, b) =>
+      String(a.meta?.rank ?? 'A9').localeCompare(String(b.meta?.rank ?? 'A9')) ||
+      (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'))
 
   const isOverdue = (r: (typeof rows)[number]) =>
     !!r.due_date && r.due_date < today && (r.status || '').toLowerCase() !== 'done'
@@ -34,15 +37,19 @@ export default async function Tasks() {
         <Stat label="Done" value={done} />
       </div>
 
+      <NewTask />
+
       {rows.length === 0 ? (
         <Empty label="tasks" />
       ) : (
         <table className="tbl">
           <thead>
             <tr>
+              <th>Rank</th>
               <th>Task</th>
               <th>Due</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -51,6 +58,7 @@ export default async function Tasks() {
               const status = (r.status || '').toLowerCase()
               return (
                 <tr key={r.id}>
+                  <td data-label="Rank">{r.meta?.rank ?? '—'}</td>
                   <td data-label="Task">{r.title}</td>
                   <td data-label="Due" style={od ? { color: 'var(--rust)' } : undefined}>
                     {r.due_date ?? '—'}
@@ -60,6 +68,7 @@ export default async function Tasks() {
                       {od ? 'overdue' : r.status || '—'}
                     </span>
                   </td>
+                  <td data-label="">{status === 'done' ? null : <DoneButton id={r.id} />}</td>
                 </tr>
               )
             })}

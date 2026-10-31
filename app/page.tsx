@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { getRecords, getFunnel, isCashReceived, rm } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import FunnelBar from '@/app/_components/FunnelBar'
@@ -18,7 +19,11 @@ async function proposedCount(): Promise<number> {
 }
 
 export default async function Dashboard() {
-  const [rows, waiting] = await Promise.all([getRecords(), proposedCount()])
+  const [rows, waiting, { data: latest }] = await Promise.all([
+    getRecords(),
+    proposedCount(),
+    supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1),
+  ])
   const funnel = getFunnel(rows)
 
   // ── The Money row ───────────────────────────────────────────────
@@ -37,6 +42,11 @@ export default async function Dashboard() {
     <>
       <h1 className="ph">Dashboard</h1>
       <p className="cap">The river, the money, and what needs your YES.</p>
+
+      <p className="cap">
+        {latest?.[0] ? `Sales logged up to ${latest[0].sale_date}. ` : 'No sales logged yet. '}
+        <Link href="/pulse">Log sales</Link> · <Link href="/clock">Clock in</Link>
+      </p>
 
       {/* Row 1 — the funnel (whole-business river) */}
       <FunnelBar funnel={funnel} />

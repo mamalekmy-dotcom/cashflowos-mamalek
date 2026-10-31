@@ -31,6 +31,7 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/vault', label: 'Vault' },
   ] },
   { label: 'People', tabs: [
+    { href: '/chat', label: 'Chat' },
     { href: '/clock', label: 'Clock in' },
     { href: '/team', label: 'Talent HQ' },
   ] },
@@ -40,6 +41,8 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/docs', label: 'Doc Center' },
   ] },
   { label: 'Account', tabs: [
+    { href: '/reviews', label: 'Table QR' },
+    { href: '/memory', label: 'Outlet Memory' },
     { href: '/admin', label: 'Admin' },
     { href: '/account', label: 'My account' },
   ] },

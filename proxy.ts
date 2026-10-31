@@ -37,6 +37,7 @@ export async function proxy(req: NextRequest) {
 // without a session:
 //   • /login, /forgot-password, /reset-password, /api/login, /api/logout,
 //     /api/password/* — you can't log in through a locked login page
+//   • /r/*                    — guest review pages from table QR codes (no login)
 //   • /api/telegram           — Telegram's webhook (has its own secret-header guard)
 //   • /api/cron-daily         — the daily cron (has its own fail-closed Bearer guard)
 //   • /manifest.webmanifest   — the REAL PWA manifest (app/manifest.ts serves HERE);
@@ -45,6 +46,6 @@ export async function proxy(req: NextRequest) {
 // A single missed exclusion here = a locked webhook on class day, so this list is tested.
 export const config = {
   matcher: [
-    '/((?!login|forgot-password|reset-password|api/login|api/logout|api/password|api/telegram|api/cron-daily|manifest\\.webmanifest|manifest\\.json|icons|_next|favicon\\.ico).*)',
+    '/((?!login|r/|forgot-password|reset-password|api/login|api/logout|api/password|api/telegram|api/cron-daily|manifest\\.webmanifest|manifest\\.json|icons|_next|favicon\\.ico).*)',
   ],
 }

@@ -57,6 +57,15 @@ export const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone:
 // Today's weekday name, so the bot can turn "Friday" into a real date.
 export const todayWeekday = () => new Date().toLocaleDateString('en-GB', { timeZone: TIME_ZONE, weekday: 'long' })
 
+// The next 7 days with their weekdays, so the bot copies dates instead of doing
+// calendar maths, which it gets wrong.
+export const upcomingDays = () =>
+  Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() + (i + 1) * 86_400_000)
+    const weekday = d.toLocaleDateString('en-GB', { timeZone: TIME_ZONE, weekday: 'long' })
+    return `${weekday} ${d.toLocaleDateString('en-CA', { timeZone: TIME_ZONE })}`
+  }).join(', ')
+
 // Cash In means money that actually landed. An unpaid invoice is "Who Owes Me",
 // and a reversed row never arrived, so neither counts here.
 const RECEIVED = new Set(['paid', 'received', 'done', 'closed'])

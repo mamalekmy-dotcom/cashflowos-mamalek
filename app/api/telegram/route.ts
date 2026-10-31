@@ -10,7 +10,7 @@ import {
   downloadFileBytes,
 } from '@/lib/telegram'
 import { loadTurns, appendTurn, bumpDailyCounter } from '@/lib/bot-memory'
-import { getRecords, rm, todayISO, todayWeekday } from '@/lib/records'
+import { getRecords, rm, todayISO, todayWeekday, upcomingDays } from '@/lib/records'
 import { claim, executeClaimed, summarizeResult, undoAction, runAutopilot, proposeAndNotify } from '@/lib/actions'
 import { readImage, type VisionResult } from '@/lib/vision'
 import { BOT_TOOLS, runBotTool } from '@/lib/bot-tools'
@@ -336,6 +336,14 @@ async function runAgentNow(
 // frustrated / out-of-scope / failed-twice ⇒ we log an 'escalated' run and hand
 // off, instead of inventing an answer.
 // ============================================================
+// True when a reply says it acted but this turn's action tools don't back that up:
+// an /undo id no tool returned, or an opening "Done" with no action run at all.
+function claimsUnbackedAction(reply: string, toolOutput: string[]): boolean {
+  const undoIds = reply.match(/\/undo-\d+/g) ?? []
+  if (undoIds.some(id => !toolOutput.some(out => out.includes(`"${id}"`)))) return true
+  return toolOutput.length === 0 && /^\W*done\b/i.test(reply)
+}
+
 async function answerWithTools(chatId: number, text: string, apiKey: string): Promise<string> {
   const rows = await getRecords()
   const recent = await loadTurns(chatId)
@@ -345,13 +353,16 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
     // This is CONTEXT ONLY. The rules below are absolute and come after it on
     // purpose, so nothing in the business profile can widen what Jarvis may do.
     jarvisIdentity() +
-    `Today is ${todayWeekday()}, ${todayISO()} (Malaysia time). Work out every relative date from this: ` +
-    `a bare weekday like "Friday" means its next occurrence after today.\n` +
+    `Today is ${todayWeekday()}, ${todayISO()} (Malaysia time). The next 7 days are: ${upcomingDays()}. ` +
+    `Copy dates from this list, never calculate them: a bare weekday like "Friday" means its entry here.\n` +
     `You have READ tools (cash, funnel/pipeline, leads, invoices/owed, tasks, content, follow-ups, ` +
     `triage) and ACTION tools that DO things. Chain tools when useful (e.g. who_to_followup → ` +
     `draft_followup; or find an invoice → mark_invoice_paid). Keep replies short. Telegram formatting: ` +
     `<b>,<i>,<code> only.\n` +
     `GROUNDING: always base money/pipeline answers on a tool result — never guess a number.\n` +
+    `HONESTY: nothing happens unless you call the tool in THIS turn. Every add/log/mark request needs a ` +
+    `fresh tool call, even if the recent conversation shows the same request. Never write "done" or an ` +
+    `/undo id that a tool did not just return.\n` +
     `ACTING — the autonomy dial: for add_task / add_lead / a small log_expense the tool runs it ` +
     `immediately; tell the owner it's done and include the exact /undo-<id> the tool returned. For ` +
     `log_cash_in / mark_invoice_paid / update_lead_status / a big log_expense the tool only PROPOSES ` +
@@ -367,6 +378,9 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
 
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: text }]
   let answer = 'Sorry, I hit a snag. Check your ANTHROPIC_API_KEY has credit, then try again.'
+  // What the action tools really returned this turn, to catch a reply claiming otherwise.
+  const toolOutput: string[] = []
+  let forceTool = false
 
   try {
     const anthropic = new Anthropic({ apiKey })
@@ -376,8 +390,10 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
         max_tokens: 1024,
         system,
         tools: [...BOT_TOOLS, ...BOT_ACTION_TOOLS] as any,
+        ...(forceTool ? { tool_choice: { type: 'any' as const } } : {}),
         messages,
       })
+      forceTool = false
 
       const textOut = res.content
         .filter((c): c is Anthropic.TextBlock => c.type === 'text')
@@ -390,6 +406,15 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
 
       // No tool call → this is the final answer.
       if (res.stop_reason !== 'tool_use' || toolUses.length === 0) {
+        // A claimed action with no matching tool result means nothing happened. Make
+        // it call the tool instead of telling the owner something false.
+        if (claimsUnbackedAction(textOut, toolOutput)) {
+          answer = "Sorry, I couldn't do that, so nothing was saved. Please try again."
+          messages.push({ role: 'assistant', content: textOut })
+          messages.push({ role: 'user', content: 'You did not call a tool, so nothing happened. Call the correct tool for my request now.' })
+          forceTool = true
+          continue
+        }
         if (textOut) answer = textOut
         break
       }
@@ -411,9 +436,11 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
       messages.push({ role: 'assistant', content: res.content })
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUses.map(async t => {
-          const out = ACTION_TOOL_NAMES.has(t.name)
+          const isAction = ACTION_TOOL_NAMES.has(t.name)
+          const out = isAction
             ? await runBotAction(t.name, t.input, { chatId, thresholdRM: threshold(), rows })
             : runBotTool(t.name, t.input, rows)
+          if (isAction) toolOutput.push(out)
           return {
             type: 'tool_result' as const,
             tool_use_id: t.id,

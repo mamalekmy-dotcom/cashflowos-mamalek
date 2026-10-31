@@ -37,6 +37,7 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
   ] },
   { label: 'Purchasing', tabs: [
     { href: '/suppliers', label: 'Suppliers' },
+    { href: '/stock', label: 'Stock' },
     { href: '/scan', label: 'Scan' },
     { href: '/docs', label: 'Doc Center' },
   ] },

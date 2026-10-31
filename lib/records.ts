@@ -92,7 +92,10 @@ export async function latestMonthSales(): Promise<{ month: string; total: number
   const month = lastDate.slice(0, 7)
   const { data } = await supabase.from('daily_sales').select('net_sales').gte('sale_date', `${month}-01`).lte('sale_date', lastDate)
   const rows = data ?? []
-  return { month, total: rows.reduce((sum, r) => sum + Number(r.net_sales), 0), days: rows.length, lastDate }
+  // A month with a TMS report uses TMS net sales. The daily rows leave out service tax.
+  const { data: tms } = await supabase.from('monthly_pnl').select('net_sales').eq('month', month).maybeSingle()
+  const total = tms ? Number(tms.net_sales) : rows.reduce((sum, r) => sum + Number(r.net_sales), 0)
+  return { month, total, days: rows.length, lastDate }
 }
 
 // How many proposals are waiting for a YES right now (status 'proposed', unexpired).

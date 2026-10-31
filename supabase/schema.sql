@@ -308,6 +308,57 @@ create table if not exists review_events (
 );
 
 -- ------------------------------------------------------------
+-- monthly_pnl — one row per month, copied from the TMS report. When a month has a
+-- row here, P&L Pulse uses it instead of adding up daily_sales and cost_entries.
+-- ------------------------------------------------------------
+create table if not exists monthly_pnl (
+  month             text        primary key,
+  gross_sales       numeric     not null default 0,
+  net_sales         numeric     not null default 0,
+  cogs              numeric     not null default 0,
+  variable_costs    numeric     not null default 0,
+  purchases         numeric     not null default 0,
+  opening_stock     numeric     not null default 0,
+  closing_stock     numeric     not null default 0,
+  labor             numeric     not null default 0,
+  rent              numeric     not null default 0,
+  fixed_costs       numeric     not null default 0,
+  profit_before_tax numeric     not null default 0,
+  tax_estimate      numeric     not null default 0,
+  pax               integer     not null default 0,
+  source            text        not null default 'tms',
+  updated_at        timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- purchases + stock_counts — loaded from the Stock workbook by scripts/import-stock.mjs.
+-- ------------------------------------------------------------
+create table if not exists purchases (
+  id            bigint generated always as identity primary key,
+  purchase_date date    not null,
+  supplier      text    not null,
+  amount        numeric not null
+);
+create index if not exists purchases_date_idx on purchases (purchase_date);
+
+create table if not exists stock_counts (
+  id             bigint generated always as identity primary key,
+  month          text    not null,
+  area           text    not null default '',
+  section        text    not null default '',
+  item           text    not null,
+  uom            text,
+  unit_price     numeric not null default 0,
+  opening_qty    numeric not null default 0,
+  opening_amount numeric not null default 0,
+  bought_qty     numeric not null default 0,
+  bought_amount  numeric not null default 0,
+  closing_qty    numeric not null default 0,
+  closing_amount numeric not null default 0
+);
+create index if not exists stock_counts_month_idx on stock_counts (month);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -334,6 +385,9 @@ alter table chat_messages enable row level security;
 alter table outlet_memory enable row level security;
 alter table review_links  enable row level security;
 alter table review_events enable row level security;
+alter table monthly_pnl   enable row level security;
+alter table purchases     enable row level security;
+alter table stock_counts  enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

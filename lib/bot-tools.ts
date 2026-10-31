@@ -257,11 +257,25 @@ export async function runSalesTool(input: any): Promise<string> {
     const pax = add('pax')
     const byNet = [...days].sort((a, b) => Number(b.net_sales) - Number(a.net_sales))
     const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    // A whole month that TMS covers gets the official figures next to the daily POS totals.
+    const month = from.slice(0, 7)
+    const { data: tms } = from.endsWith('-01') && to.slice(0, 7) === month
+      ? await supabase.from('monthly_pnl').select('*').eq('month', month).maybeSingle()
+      : { data: null }
     return JSON.stringify({
       from: days[0].sale_date,
       to: days[days.length - 1].sale_date,
       latest_logged: lastDate,
       trading_days: days.length,
+      official_month_figures_from_tms: tms ? {
+        gross_sales: money(Number(tms.gross_sales)),
+        net_sales: money(Number(tms.net_sales)),
+        food_cost: money(Number(tms.cogs)),
+        labour: money(Number(tms.labor)),
+        rent: money(Number(tms.rent)),
+        profit_before_tax: money(Number(tms.profit_before_tax)),
+        pax: tms.pax,
+      } : null,
       net_sales: money(total),
       average_per_day: money(total / days.length),
       pax,

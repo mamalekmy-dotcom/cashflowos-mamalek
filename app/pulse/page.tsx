@@ -9,10 +9,22 @@ export const dynamic = 'force-dynamic'
 const pad = (n: number) => String(n).padStart(2, '0')
 const percent = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '—')
 
+type MonthlyPnl = {
+  net_sales: number
+  cogs: number
+  variable_costs: number
+  labor: number
+  rent: number
+  fixed_costs: number
+  profit_before_tax: number
+  pax: number
+}
+
 // Sales, and what's left once they split into food, labour, rent and other. Prime cost
-// (food + labour) is the number restaurants watch. Sales come from daily_sales; costs
-// from cost_entries, so a cost that hasn't been entered makes the month look better
-// than it is. The page says so rather than letting it pass as real profit.
+// (food + labour) is the number restaurants watch. A month with a TMS report uses those
+// figures as they are. Otherwise sales come from daily_sales and costs from cost_entries,
+// so a cost that hasn't been entered makes the month look better than it is. The page
+// says so rather than letting it pass as real profit.
 export default async function Pulse({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const { month: asked } = await searchParams
   const today = todayISO()
@@ -26,20 +38,26 @@ export default async function Pulse({ searchParams }: { searchParams: Promise<{ 
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`
   }
 
-  const [{ data: sales }, { data: costs }] = await Promise.all([
+  const [{ data: sales }, { data: costs }, { data: tmsRow }] = await Promise.all([
     supabase.from('daily_sales').select('sale_date, net_sales, receipts, pax').gte('sale_date', from).lte('sale_date', to),
     supabase.from('cost_entries').select('category, amount').gte('entry_date', from).lte('entry_date', to),
+    supabase.from('monthly_pnl').select('net_sales, cogs, variable_costs, labor, rent, fixed_costs, profit_before_tax, pax').eq('month', month).maybeSingle(),
   ])
 
+  const tms = tmsRow ? (Object.fromEntries(Object.entries(tmsRow).map(([k, v]) => [k, Number(v)])) as MonthlyPnl) : null
   const byDay = new Map((sales ?? []).map(s => [s.sale_date as string, Number(s.net_sales)]))
-  const total = [...byDay.values()].reduce((sum, n) => sum + n, 0)
+  const dailyTotal = [...byDay.values()].reduce((sum, n) => sum + n, 0)
   const spent = (category: string) =>
     (costs ?? []).filter(c => c.category === category).reduce((sum, c) => sum + Number(c.amount), 0)
-  const [food, labor, rent, other] = ['food', 'labor', 'rent', 'other'].map(spent)
+  const total = tms ? tms.net_sales : dailyTotal
+  const food = tms ? tms.cogs : spent('food')
+  const labor = tms ? tms.labor : spent('labor')
+  const rent = tms ? tms.rent : spent('rent')
+  const other = tms ? tms.variable_costs - tms.cogs + tms.fixed_costs - tms.labor - tms.rent : spent('other')
   const allCosts = food + labor + rent + other
   const kept = total - allCosts
   const receipts = (sales ?? []).reduce((sum, s) => sum + Number(s.receipts), 0)
-  const pax = (sales ?? []).reduce((sum, s) => sum + Number(s.pax), 0)
+  const pax = tms?.pax || (sales ?? []).reduce((sum, s) => sum + Number(s.pax), 0)
   const firstWeekday = new Date(Date.UTC(year, mon - 1, 1)).getUTCDay()
   const monthName = new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
@@ -55,7 +73,13 @@ export default async function Pulse({ searchParams }: { searchParams: Promise<{ 
         <Stat label="Avg per pax" value={pax ? rm(Math.round(total / pax)) : '—'} />
       </div>
 
-      {total > 0 && allCosts === 0 ? (
+      {tms ? <p className="cap">{monthName} figures are from TMS. Kept is profit before tax.</p> : null}
+      {tms && labor === 0 ? (
+        <p className="login-error" style={{ marginBottom: 16 }}>
+          TMS has no labour or rent for {monthName}, so Kept is too high.
+        </p>
+      ) : null}
+      {!tms && total > 0 && allCosts === 0 ? (
         <p className="login-error" style={{ marginBottom: 16 }}>
           No costs entered for {monthName} yet, so Kept is just sales, not profit.
         </p>

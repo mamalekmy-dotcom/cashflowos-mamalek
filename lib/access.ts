@@ -25,7 +25,7 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
     '/tasks': 'edit',
   },
   sales: { '/crm': 'edit', '/leads': 'edit', '/customers': 'edit', '/tasks': 'edit' },
-  ops: { '/suppliers': 'edit', '/vault': 'edit', '/tasks': 'edit' },
+  ops: { '/suppliers': 'edit', '/stock': 'edit', '/vault': 'edit', '/tasks': 'edit' },
   staff: { '/tasks': 'edit' },
 }
 
@@ -44,6 +44,7 @@ export const GRANTABLE_TABS = [
   { href: '/employees', label: 'AI Employees' },
   { href: '/vault', label: 'Vault' },
   { href: '/suppliers', label: 'Suppliers' },
+  { href: '/stock', label: 'Stock' },
   // Module tabs still being built. They sit last so nobody lands on a page that
   // doesn't exist yet. Move each one up when its tab is merged.
   { href: '/marketing', label: 'Marketing' },

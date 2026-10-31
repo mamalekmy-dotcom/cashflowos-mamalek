@@ -1,7 +1,7 @@
 import 'server-only'
 import { randomUUID } from 'crypto'
 import type { Rec } from './records'
-import { rm } from './records'
+import { rm, todayISO } from './records'
 import { runAutopilot, proposeAndNotify } from './actions'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -45,7 +45,7 @@ export const BOT_ACTION_TOOLS = [
       type: 'object' as const,
       properties: {
         title: { type: 'string', description: 'What the task is.' },
-        due_date: { type: 'string', description: 'Optional YYYY-MM-DD deadline.' },
+        due_date: { type: 'string', description: 'Optional YYYY-MM-DD deadline, worked out from today\'s date.' },
         owner: { type: 'string', description: 'Optional person responsible.' },
       },
       required: ['title'],
@@ -180,17 +180,23 @@ export async function runBotAction(name: string, input: any, ctx: BotActionCtx):
     if (name === 'add_task') {
       const title = String(input?.title || '').trim()
       if (!title) return JSON.stringify({ status: 'error', message: 'What is the task?' })
+      // Never file a guessed date: a bad or past deadline goes back for another try.
+      const due = input?.due_date ? String(input.due_date) : null
+      const today = todayISO()
+      if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || due < today)) {
+        return JSON.stringify({ status: 'error', message: `Nothing added: ${due} is not a valid upcoming date. Today is ${today}. Work out the date again, or ask the owner.` })
+      }
       const done = await runAutopilot('add-task', {
         op: 'insert', category: 'task', title, status: 'open',
-        due_date: input?.due_date || null,
+        due_date: due,
         meta: { owner: input?.owner || undefined },
         idempotencyKey: randomUUID(),
       })
       if (!done) return JSON.stringify({ status: 'noop', message: 'Already added.' })
       return JSON.stringify({
         status: 'added', zone: 'green', record_id: done.row.id, task: title,
-        due_date: input?.due_date || null, undo: `/undo-${done.row.id}`,
-        tell_user: 'Added it (autopilot, reversible). Offer the /undo id.',
+        due_date: due, undo: `/undo-${done.row.id}`,
+        tell_user: 'Added it (autopilot, reversible). State the actual due date and offer the /undo id.',
       })
     }
 

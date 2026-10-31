@@ -1,4 +1,4 @@
-import { getRecords, getFunnel, rm } from '@/lib/records'
+import { getRecords, getFunnel, isCashReceived, rm } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import FunnelBar from '@/app/_components/FunnelBar'
 import Stat from '@/app/_components/Stat'
@@ -27,7 +27,7 @@ export default async function Dashboard() {
       .filter(r => r.category === cat && (!statuses || statuses.includes((r.status || '').toLowerCase())))
       .reduce((s, r) => s + Number(r.amount || 0), 0)
 
-  const cashIn = sum('cash_in')
+  const cashIn = rows.filter(isCashReceived).reduce((s, r) => s + Number(r.amount || 0), 0)
   const cashOut = sum('cash_out')
   const net = cashIn - cashOut
   // "Who owes me" = money-in that hasn't landed yet (waiting / overdue / unpaid).

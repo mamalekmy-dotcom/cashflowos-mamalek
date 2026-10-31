@@ -48,8 +48,30 @@ export const m = (r: Rec, k: string) => {
 // Format a number as Malaysian Ringgit for display.
 export const rm = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY')
 
+// The business runs on Malaysia time, so "today" must not lag 8 hours behind UTC.
+const TIME_ZONE = 'Asia/Kuala_Lumpur'
+
 // Today as YYYY-MM-DD (for due-date comparisons + seeds).
-export const todayISO = () => new Date().toISOString().slice(0, 10)
+export const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: TIME_ZONE })
+
+// Today's weekday name, so the bot can turn "Friday" into a real date.
+export const todayWeekday = () => new Date().toLocaleDateString('en-GB', { timeZone: TIME_ZONE, weekday: 'long' })
+
+// Cash In means money that actually landed. An unpaid invoice is "Who Owes Me",
+// and a reversed row never arrived, so neither counts here.
+const RECEIVED = new Set(['paid', 'received', 'done', 'closed'])
+export const isCashReceived = (r: Rec) =>
+  r.category === 'cash_in' && RECEIVED.has((r.status || '').toLowerCase())
+
+// When the money landed, in ms. Uses the paid_at stamp when there is one. Older rows
+// fall back to a due date already passed when the row was created, then created_at.
+export function cashReceivedAt(r: Rec): number {
+  const paidAt = Date.parse(r.meta?.paid_at || '')
+  if (Number.isFinite(paidAt)) return paidAt
+  const created = Date.parse(r.created_at)
+  const due = r.due_date ? Date.parse(r.due_date) : NaN
+  return Number.isFinite(due) && due < created ? due : created
+}
 
 // How many proposals are waiting for a YES right now (status 'proposed', unexpired).
 // Powers the 🙋 sidebar badge. Returns 0 before Supabase is wired (no hang).

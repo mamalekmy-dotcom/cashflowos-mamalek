@@ -201,6 +201,11 @@ async function writeRecord(agentKey: string, payload: any): Promise<any> {
     if (payload?.status != null) patch.status = String(payload.status)
     if (payload?.meta && typeof payload.meta === 'object') patch.meta = payload.meta
     if (Object.keys(patch).length === 0) throw new Error('nothing to update')
+    // Stamp when an invoice was paid so "cash in this week" can date it correctly.
+    if (patch.status === 'paid') {
+      const { data: current } = await supabase.from('records').select('meta').eq('id', recordId).maybeSingle()
+      patch.meta = { ...(current?.meta || {}), ...(patch.meta || {}), paid_at: new Date().toISOString() }
+    }
     const { data, error } = await supabase.from('records').update(patch).eq('id', recordId).select()
     if (error) throw new Error(`could not update the record: ${error.message}`)
     const row = data?.[0]

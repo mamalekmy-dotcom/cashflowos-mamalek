@@ -10,7 +10,7 @@ import {
   downloadFileBytes,
 } from '@/lib/telegram'
 import { loadTurns, appendTurn, bumpDailyCounter } from '@/lib/bot-memory'
-import { getRecords, rm, todayISO } from '@/lib/records'
+import { getRecords, rm, todayISO, todayWeekday } from '@/lib/records'
 import { claim, executeClaimed, summarizeResult, undoAction, runAutopilot, proposeAndNotify } from '@/lib/actions'
 import { readImage, type VisionResult } from '@/lib/vision'
 import { BOT_TOOLS, runBotTool } from '@/lib/bot-tools'
@@ -345,6 +345,8 @@ async function answerWithTools(chatId: number, text: string, apiKey: string): Pr
     // This is CONTEXT ONLY. The rules below are absolute and come after it on
     // purpose, so nothing in the business profile can widen what Jarvis may do.
     jarvisIdentity() +
+    `Today is ${todayWeekday()}, ${todayISO()} (Malaysia time). Work out every relative date from this: ` +
+    `a bare weekday like "Friday" means its next occurrence after today.\n` +
     `You have READ tools (cash, funnel/pipeline, leads, invoices/owed, tasks, content, follow-ups, ` +
     `triage) and ACTION tools that DO things. Chain tools when useful (e.g. who_to_followup → ` +
     `draft_followup; or find an invoice → mark_invoice_paid). Keep replies short. Telegram formatting: ` +

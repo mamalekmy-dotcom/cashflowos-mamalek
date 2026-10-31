@@ -1,6 +1,6 @@
 import 'server-only'
 import type { Rec } from './records'
-import { rm, todayISO, getFunnel } from './records'
+import { rm, todayISO, getFunnel, isCashReceived, cashReceivedAt } from './records'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Jarvis bot's HANDS. Instead of dumping your whole table into the prompt,
@@ -21,7 +21,8 @@ export const BOT_TOOLS = [
   {
     name: 'get_cash_summary',
     description:
-      'Get cash in, cash out, net, and how much is still owed to the owner, for a time window. ' +
+      'Get cash in (money actually received, never unpaid invoices), cash out, net, and how much is ' +
+      'still owed to the owner, for a time window. ' +
       'Use this for ANY money total question ("how much cash in this week?", "what\'s my net this month?", "who owes me?").',
     input_schema: {
       type: 'object' as const,
@@ -194,7 +195,8 @@ export function runBotTool(name: string, input: any, rows: Rec[]): string {
       const inWindow = (r: Rec) =>
         !Number.isFinite(days) || new Date(r.created_at).getTime() >= since
 
-      const cashIn = sum(rows.filter(r => r.category === 'cash_in' && inWindow(r)))
+      // Cash in = money that landed inside the window, dated by when it landed.
+      const cashIn = sum(rows.filter(r => isCashReceived(r) && (!Number.isFinite(days) || cashReceivedAt(r) >= since)))
       const cashOut = sum(rows.filter(r => r.category === 'cash_out' && inWindow(r)))
       // "Who owes me" = cash_in still unpaid — outstanding regardless of the window.
       const owed = sum(rows.filter(r => r.category === 'cash_in' && !PAID.has((r.status || '').toLowerCase())))

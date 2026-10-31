@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import { sendMessage } from '@/lib/telegram'
-import { getRecords, getFunnel, rm, todayISO, type Rec } from '@/lib/records'
+import { getRecords, getFunnel, isCashReceived, rm, todayISO, type Rec } from '@/lib/records'
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
 
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
   const rows = await getRecords()
 
   // ① THE MONEY ROW (mirrors the Dashboard).
-  const cashIn = sum(rows.filter((r) => r.category === 'cash_in'))
+  const cashIn = sum(rows.filter(isCashReceived))
   const cashOut = sum(rows.filter((r) => r.category === 'cash_out'))
   const owed = sum(rows.filter((r) => r.category === 'cash_in' && !PAID.has((r.status || '').toLowerCase())))
 

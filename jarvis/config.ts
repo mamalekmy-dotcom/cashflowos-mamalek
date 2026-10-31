@@ -16,7 +16,7 @@
 export const JARVIS = {
   // ── 👉 WHO ────────────────────────────────────────────────────────────────
   /** What your business is called. Jarvis introduces itself with this. */
-  businessName: '',            // e.g. 'Bright Cafe'
+  businessName: 'Mama Lek',    // e.g. 'Bright Cafe'
   /** What Jarvis should call you. */
   ownerName: '',               // e.g. 'boss' · 'Kingsley'
   /** What you sell, in one line. */

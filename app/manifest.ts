@@ -6,18 +6,18 @@ import type { MetadataRoute } from 'next'
 // makes the installed app open full-screen, like a native app.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'CashFlowOS AI Agents',
-    short_name: 'CashFlowOS',
-    description: 'Your Money Robot — one AI HQ for the whole business.',
+    name: 'Mama Lek',
+    short_name: 'Mama Lek',
+    description: 'Mama Lek — one AI HQ for the whole business.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
     background_color: '#FAF7F2',
-    theme_color: '#D97757',
+    theme_color: '#F16641',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }
 }

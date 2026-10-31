@@ -100,6 +100,36 @@ create table if not exists tg_updates (
 );
 
 -- ------------------------------------------------------------
+-- 7) app_users — who can log in, and what they can reach. Passwords live in
+--    Supabase Auth (auth_id links to it), never here. extra_tabs adds tabs on top
+--    of the role. A disabled person keeps their row, so history keeps their name.
+-- ------------------------------------------------------------
+create table if not exists app_users (
+  id                   bigint generated always as identity primary key,
+  auth_id              uuid        unique,
+  email                text        not null unique,
+  name                 text        not null,
+  role                 text        not null default 'staff',   -- owner | marketing | sales | ops | staff
+  extra_tabs           text[]      not null default '{}',
+  telegram_id          bigint      unique,
+  active               boolean     not null default true,
+  must_change_password boolean     not null default true,
+  created_at           timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 8) app_sessions — one row per logged-in device. Only a hash of the cookie is
+--    stored. Deleting the rows logs that person out at once.
+-- ------------------------------------------------------------
+create table if not exists app_sessions (
+  token_hash text        primary key,
+  user_id    bigint      not null references app_users(id) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists app_sessions_user_id_idx on app_sessions (user_id);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -110,6 +140,8 @@ alter table agent_runs    enable row level security;
 alter table vault_files   enable row level security;
 alter table bot_memory    enable row level security;
 alter table tg_updates    enable row level security;
+alter table app_users     enable row level security;
+alter table app_sessions  enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

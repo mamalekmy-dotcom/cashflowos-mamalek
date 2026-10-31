@@ -13,14 +13,19 @@ import { revalidatePath } from 'next/cache'
 import { claim, executeClaimed, summarizeResult } from '@/lib/actions'
 import { editMessageReplyMarkup, sendMessage } from '@/lib/telegram'
 import { logRun } from '@/lib/runs'
+import { requireOwner } from '@/lib/auth'
 
-// In-app decisions are made by the owner. Stamp their chat id if we know it.
-const approverId = () => (process.env.OWNER_CHAT_ID ? Number(process.env.OWNER_CHAT_ID) : null)
+// In-app decisions are owners only, re-checked here rather than trusting the page.
+// Stamp the decider's Telegram id when we know it, so the history shows who it was.
+async function approverId(): Promise<number | null> {
+  const owner = await requireOwner()
+  return owner.telegram_id ?? (process.env.OWNER_CHAT_ID ? Number(process.env.OWNER_CHAT_ID) : null)
+}
 // Strip the HTML tags summarizeResult() uses for Telegram, for a plain in-app toast.
 const plain = (s: string) => s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&')
 
 export async function approveAction(id: number): Promise<{ ok: boolean; message: string }> {
-  const claimed = await claim(id, approverId(), 'executing')
+  const claimed = await claim(id, await approverId(), 'executing')
   if (!claimed) {
     revalidatePath('/approvals')
     return { ok: false, message: 'Already handled — nothing changed.' }
@@ -45,7 +50,8 @@ export async function approveAction(id: number): Promise<{ ok: boolean; message:
 }
 
 export async function rejectAction(id: number): Promise<{ ok: boolean; message: string }> {
-  const claimed = await claim(id, approverId(), 'rejected')
+  const decidedBy = await approverId()
+  const claimed = await claim(id, decidedBy, 'rejected')
   if (!claimed) {
     revalidatePath('/approvals')
     return { ok: false, message: 'Already handled — nothing changed.' }
@@ -54,7 +60,7 @@ export async function rejectAction(id: number): Promise<{ ok: boolean; message: 
     await editMessageReplyMarkup(claimed.notify_chat_id, claimed.notify_message_id)
     await sendMessage(claimed.notify_chat_id, '❌ Rejected in the app — nothing was done.')
   }
-  await logRun(claimed.agent_key, 'rejected', { action_id: id, by: approverId() ?? 'app' })
+  await logRun(claimed.agent_key, 'rejected', { action_id: id, by: decidedBy ?? 'app' })
   revalidatePath('/approvals')
   return { ok: true, message: 'Rejected — nothing was done.' }
 }

@@ -1,11 +1,13 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 
-// The lock screen. One passcode field, friendly copy. On success the server sets
-// the session cookie and we send you to your HQ. This page is EXCLUDED from the
-// passcode gate in proxy.ts (you can't log in through a locked login page).
+// The login screen. On success the server sets the session cookie and tells us which
+// page this person starts on. proxy.ts leaves this page open, since you can't log in
+// through a locked login page.
 export default function Login() {
-  const [passcode, setPasscode] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -17,18 +19,14 @@ export default function Login() {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ email, password }),
       })
       const body = await res.json().catch(() => ({}))
       if (res.ok && body.ok) {
-        window.location.href = '/'
+        window.location.href = body.home || '/'
         return
       }
-      if (body.reason === 'no_passcode_set') {
-        setError("No passcode is set yet, so there's nothing to unlock — just open the app.")
-      } else {
-        setError("That code didn't match. Try again.")
-      }
+      setError("That email or password didn't match. Try again.")
     } catch {
       setError('Something went wrong reaching the server. Check your connection and try again.')
     } finally {
@@ -42,24 +40,32 @@ export default function Login() {
         <div className="brand" style={{ marginBottom: 8 }}>
           <img className="logo" src="/icons/logo.png" alt="" /> Mama Lek
         </div>
-        <h1 className="ph" style={{ fontSize: 18 }}>Enter your passcode</h1>
-        <p className="cap" style={{ margin: '4px 0 16px' }}>
-          A lock on the door, not bank-grade security — just enough to keep your numbers private.
-        </p>
+        <h1 className="ph" style={{ fontSize: 18, marginBottom: 16 }}>Log in</h1>
+        <input
+          className="login-input"
+          type="email"
+          autoComplete="email"
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          autoFocus
+        />
         <input
           className="login-input"
           type="password"
-          inputMode="text"
           autoComplete="current-password"
-          placeholder="Passcode"
-          value={passcode}
-          onChange={e => setPasscode(e.target.value)}
-          autoFocus
+          placeholder="Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          style={{ marginTop: 10 }}
         />
         {error ? <p className="login-error">{error}</p> : null}
-        <button className="btn" type="submit" disabled={busy || !passcode} style={{ width: '100%', marginTop: 12 }}>
-          {busy ? 'Checking…' : 'Unlock'}
+        <button className="btn" type="submit" disabled={busy || !email || !password} style={{ width: '100%', marginTop: 12 }}>
+          {busy ? 'Checking…' : 'Log in'}
         </button>
+        <p className="cap" style={{ margin: '14px 0 0', textAlign: 'center' }}>
+          <Link href="/forgot-password">Forgot password?</Link>
+        </p>
       </form>
     </div>
   )

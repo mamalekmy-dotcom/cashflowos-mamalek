@@ -1,11 +1,12 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { accessLevel, type AccessUser } from '@/lib/access'
 
 // 👉 The desktop sidebar tabs, grouped under micro-cap section labels.
 //    Adding a tab? Add ONE line to the right group here, add the SAME tab to
-//    BottomNav.tsx (bottom bar or the More sheet, so it shows on phones too),
-//    and create app/<name>/page.tsx.
+//    BottomNav.tsx (so it shows on phones too), say who can reach it in
+//    lib/access.ts (until you do, it's owners only), and create app/<name>/page.tsx.
 //    See docs/add-a-tab-prompt.md for the copy-paste prompt that does all three.
 export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[] }[] = [
   { label: 'Overview', tabs: [
@@ -28,6 +29,10 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/employees', label: 'AI Employees' },
     { href: '/vault', label: 'Vault' },
   ] },
+  { label: 'Account', tabs: [
+    { href: '/admin', label: 'Admin' },
+    { href: '/account', label: 'My account' },
+  ] },
 ]
 
 // Flat list kept for anything that wants every tab in one array.
@@ -36,11 +41,15 @@ export const TABS = NAV_GROUPS.flatMap(g => g.tabs)
 // `pendingCount` is an optional seam: pass it (from a server component that
 // already knows the number) to show the clay 🙋 badge on Approvals. We never
 // fetch here — a client nav must stay free of its own server round-trips.
-export default function Nav({ pendingCount }: { pendingCount?: number }) {
+// Only tabs this person can reach are listed. That's tidiness: proxy.ts does the blocking.
+export default function Nav({ pendingCount, user }: { pendingCount?: number; user: AccessUser }) {
   const path = usePathname()
+  const groups = NAV_GROUPS
+    .map(group => ({ ...group, tabs: group.tabs.filter(t => accessLevel(user, t.href)) }))
+    .filter(group => group.tabs.length > 0)
   return (
     <nav className="nav">
-      {NAV_GROUPS.map(group => (
+      {groups.map(group => (
         <div className="nav-group" key={group.label}>
           <p className="nav-label">{group.label}</p>
           {group.tabs.map(t => (

@@ -4,6 +4,7 @@ import Nav from './_components/Nav'
 import BottomNav from './_components/BottomNav'
 import ConnStatus from './_components/ConnStatus'
 import { getPendingCount } from '@/lib/records'
+import { getCurrentUser } from '@/lib/auth'
 
 export const metadata: Metadata = {
   title: 'Mama Lek',
@@ -21,7 +22,17 @@ export const viewport: Viewport = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const pending = await getPendingCount()
+  const user = await getCurrentUser()
+  // Login and reset pages get no menu, so nothing leaks to someone not logged in.
+  if (!user) {
+    return (
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    )
+  }
+  const access = { role: user.role, extra_tabs: user.extra_tabs }
+  const pending = user.role === 'owner' ? await getPendingCount() : 0
   return (
     <html lang="en">
       <body>
@@ -29,13 +40,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {/* Desktop sidebar — hidden on phones (BottomNav takes over ≤768px). */}
           <aside className="side">
             <div className="brand"><img className="logo" src="/icons/logo.png" alt="" /> Mama Lek</div>
-            <Nav pendingCount={pending} />
+            <Nav pendingCount={pending} user={access} />
             <p className="hint">One <code>records</code> table behind every tab. Your robots live in <code>agents/</code>.</p>
           </aside>
           <main className="main"><ConnStatus />{children}</main>
         </div>
         {/* Phone bottom bar — hidden on desktop. */}
-        <BottomNav />
+        <BottomNav user={access} />
       </body>
     </html>
   )

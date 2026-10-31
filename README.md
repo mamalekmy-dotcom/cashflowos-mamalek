@@ -54,7 +54,7 @@ O (database) → E (deploy + phone app) → N (bot) → Y (daily brief), one ste
 1. Click **Use this template** on `github.com/claude-malaysia-glcc/cashflowos-ai-agents` → make your own repo → clone it.
 2. `npm install`, then `cp .env.example .env`.
 3. Make a **free** Supabase project. Open the **SQL Editor**, paste all of `supabase/schema.sql`, click **Run** (this builds your 5 tables + your private photo Vault, and seeds demo data so no tab is empty).
-4. In `.env`, fill `SUPABASE_URL` (Settings → Data API → Project URL, **base URL only**) and `SUPABASE_SERVICE_ROLE_KEY` (Settings → API Keys → service_role → Reveal). Also make up an `APP_PASSCODE` — that's your app's door lock.
+4. In `.env`, fill `SUPABASE_URL` (Settings → Data API → Project URL, **base URL only**) and `SUPABASE_SERVICE_ROLE_KEY` (Settings → API Keys → service_role → Reveal). Then create your own login with `npm run create-owner -- you@example.com "Your Name"`. Everyone else gets theirs from the Admin tab.
 
 **E — Expose** (give it a face + put it on your phone)
 5. `npm run dev` → open `localhost:3000` → enter your passcode → you should see 10 tabs and the **Dashboard funnel** (Views → Leads → Appointments → Closed → Nurture) with a money row underneath.

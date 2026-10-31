@@ -82,6 +82,19 @@ export function cashReceivedAt(r: Rec): number {
   return Number.isFinite(due) && due < created ? due : created
 }
 
+// Sales for the latest month that has any, from daily_sales. Shop takings live there
+// rather than in records, so the Dashboard and the brief read them from here.
+export async function latestMonthSales(): Promise<{ month: string; total: number; days: number; lastDate: string } | null> {
+  if (!supabaseConfigured) return null
+  const { data: latest } = await supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1)
+  const lastDate = latest?.[0]?.sale_date as string | undefined
+  if (!lastDate) return null
+  const month = lastDate.slice(0, 7)
+  const { data } = await supabase.from('daily_sales').select('net_sales').gte('sale_date', `${month}-01`).lte('sale_date', lastDate)
+  const rows = data ?? []
+  return { month, total: rows.reduce((sum, r) => sum + Number(r.net_sales), 0), days: rows.length, lastDate }
+}
+
 // How many proposals are waiting for a YES right now (status 'proposed', unexpired).
 // Powers the 🙋 sidebar badge. Returns 0 before Supabase is wired (no hang).
 export async function getPendingCount(): Promise<number> {

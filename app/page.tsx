@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getRecords, getFunnel, isCashReceived, rm } from '@/lib/records'
+import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import FunnelBar from '@/app/_components/FunnelBar'
 import Stat from '@/app/_components/Stat'
@@ -19,11 +19,7 @@ async function proposedCount(): Promise<number> {
 }
 
 export default async function Dashboard() {
-  const [rows, waiting, { data: latest }] = await Promise.all([
-    getRecords(),
-    proposedCount(),
-    supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1),
-  ])
+  const [rows, waiting, sales] = await Promise.all([getRecords(), proposedCount(), latestMonthSales()])
   const funnel = getFunnel(rows)
 
   // ── The Money row ───────────────────────────────────────────────
@@ -44,7 +40,7 @@ export default async function Dashboard() {
       <p className="cap">The river, the money, and what needs your YES.</p>
 
       <p className="cap">
-        {latest?.[0] ? `Sales logged up to ${latest[0].sale_date}. ` : 'No sales logged yet. '}
+        {sales ? `Sales logged up to ${sales.lastDate}. ` : 'No sales logged yet. '}
         <Link href="/pulse">Log sales</Link> · <Link href="/clock">Clock in</Link>
       </p>
 
@@ -54,7 +50,8 @@ export default async function Dashboard() {
       {/* Row 2 — the money + the 🙋 count */}
       <p className="rowlabel">The Money</p>
       <div className="grid">
-        <Stat label="Cash In" value={rm(cashIn)} />
+        {sales ? <Stat label={`Sales ${sales.month}`} value={rm(sales.total)} href="/pulse" /> : null}
+        <Stat label="Invoices paid" value={rm(cashIn)} />
         <Stat label="Cash Out" value={rm(cashOut)} />
         <Stat label="Net" value={rm(net)} />
         <Stat label="Who Owes Me" value={rm(owed)} />

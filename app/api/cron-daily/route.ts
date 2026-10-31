@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import { sendMessage } from '@/lib/telegram'
-import { getRecords, getFunnel, isCashReceived, rm, todayISO, type Rec } from '@/lib/records'
+import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm, todayISO, type Rec } from '@/lib/records'
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
 
@@ -65,7 +65,11 @@ export async function GET(req: Request) {
     proposed = (data ?? []) as any[]
   }
 
-  const brief = buildBrief(f, { cashIn, cashOut, owed }, proposed)
+  const sales = await latestMonthSales()
+  const salesLine = sales
+    ? `\n\n<b>Sales</b>\n${sales.month}: <b>${rm(sales.total)}</b> over ${sales.days} days, logged up to ${sales.lastDate}`
+    : ''
+  const brief = buildBrief(f, { cashIn, cashOut, owed }, proposed) + salesLine
 
   // ② Optional Jarvis-Oyen narrative — a warm chief-of-staff paragraph. Only when a
   //    key is set; its absence NEVER blocks the mandated brief above.

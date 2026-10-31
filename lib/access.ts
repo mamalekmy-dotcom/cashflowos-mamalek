@@ -43,12 +43,15 @@ export const GRANTABLE_TABS = [
   { href: '/approvals', label: 'Approvals' },
   { href: '/employees', label: 'AI Employees' },
   { href: '/vault', label: 'Vault' },
+  { href: '/suppliers', label: 'Suppliers' },
   // Module tabs still being built. They sit last so nobody lands on a page that
   // doesn't exist yet. Move each one up when its tab is merged.
   { href: '/marketing', label: 'Marketing' },
   { href: '/crm', label: 'CRM' },
-  { href: '/suppliers', label: 'Suppliers' },
 ]
+
+// Pages every logged-in person gets, whatever their role.
+const EVERYONE = ['/account', '/scan']
 
 // The first part of a path, so /leads/123 follows the rule for /leads.
 const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')
@@ -56,7 +59,7 @@ const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')
 export function accessLevel(user: AccessUser, path: string): Level | null {
   if (user.role === 'owner') return 'edit'
   const tab = tabOf(path)
-  if (tab === '/account') return 'edit'
+  if (EVERYONE.includes(tab)) return 'edit'
   if (user.extra_tabs.includes(tab)) return 'edit'
   return ROLE_ACCESS[user.role as keyof typeof ROLE_ACCESS]?.[tab] ?? null
 }

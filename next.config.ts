@@ -9,6 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 const nextConfig: NextConfig = {
   turbopack: { root: here },
+  // Phone photos of invoices run well past the 1 MB default for server actions.
+  experimental: { serverActions: { bodySizeLimit: '9mb' } },
 }
 
 export default nextConfig

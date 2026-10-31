@@ -167,6 +167,57 @@ create table if not exists cost_entries (
 create index if not exists cost_entries_date_idx on cost_entries (entry_date);
 
 -- ------------------------------------------------------------
+-- 11) suppliers + supplier_products — who you buy from, and what.
+-- ------------------------------------------------------------
+create table if not exists suppliers (
+  id         bigint generated always as identity primary key,
+  name       text        not null unique,
+  phone      text,
+  address    text,
+  notes      text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists supplier_products (
+  id          bigint generated always as identity primary key,
+  supplier_id bigint      not null references suppliers(id) on delete cascade,
+  name        text        not null,
+  unit        text,
+  price       numeric,
+  created_at  timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 12) documents — everything scanned: invoices, receipts and staff claims. A scan
+--     starts 'new' and only becomes a cost once an owner accepts it, so a misread
+--     photo can't reach the P&L on its own.
+-- ------------------------------------------------------------
+create table if not exists documents (
+  id           bigint generated always as identity primary key,
+  kind         text        not null default 'invoice',    -- invoice | receipt | claim | other
+  status       text        not null default 'new',        -- new | accepted | rejected
+  supplier_id  bigint      references suppliers(id) on delete set null,
+  merchant     text,
+  doc_date     date,
+  amount       numeric,
+  note         text,
+  storage_path text,
+  mime         text,
+  created_by   bigint      references app_users(id) on delete set null,
+  created_at   timestamptz not null default now()
+);
+create index if not exists documents_created_by_idx on documents (created_by);
+
+-- ------------------------------------------------------------
+-- 13) app_settings — small shop-wide values, such as the Doc Center PIN hash.
+-- ------------------------------------------------------------
+create table if not exists app_settings (
+  key        text        primary key,
+  value      jsonb       not null,
+  updated_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -181,6 +232,10 @@ alter table app_users     enable row level security;
 alter table app_sessions  enable row level security;
 alter table daily_sales   enable row level security;
 alter table cost_entries  enable row level security;
+alter table suppliers     enable row level security;
+alter table supplier_products enable row level security;
+alter table documents     enable row level security;
+alter table app_settings  enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

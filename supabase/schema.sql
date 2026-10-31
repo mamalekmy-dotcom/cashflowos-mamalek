@@ -218,6 +218,52 @@ create table if not exists app_settings (
 );
 
 -- ------------------------------------------------------------
+-- 14) shift_types + roster — the hours the shop runs, and who works which.
+-- ------------------------------------------------------------
+create table if not exists shift_types (
+  code       text primary key,
+  start_time time not null,
+  end_time   time not null
+);
+
+create table if not exists roster (
+  user_id    bigint not null references app_users(id) on delete cascade,
+  work_date  date   not null,
+  shift_code text   not null references shift_types(code) on update cascade,
+  primary key (user_id, work_date)
+);
+
+-- ------------------------------------------------------------
+-- 15) punches — clock in and out. Distance from the shop is stored at punch time,
+--     so moving the shop pin later can't rewrite history.
+-- ------------------------------------------------------------
+create table if not exists punches (
+  id          bigint generated always as identity primary key,
+  user_id     bigint      not null references app_users(id) on delete cascade,
+  kind        text        not null check (kind in ('in', 'out')),
+  punched_at  timestamptz not null default now(),
+  lat         double precision,
+  lng         double precision,
+  distance_m  integer,
+  photo_path  text
+);
+create index if not exists punches_user_time_idx on punches (user_id, punched_at);
+
+-- ------------------------------------------------------------
+-- 16) ot_requests — one per clock-out past the shift's end. Hours only, not pay.
+-- ------------------------------------------------------------
+create table if not exists ot_requests (
+  id         bigint generated always as identity primary key,
+  user_id    bigint      not null references app_users(id) on delete cascade,
+  work_date  date        not null,
+  hours      numeric     not null,
+  status     text        not null default 'pending',   -- pending | approved | denied
+  decided_by bigint      references app_users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (user_id, work_date)
+);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -236,6 +282,10 @@ alter table suppliers     enable row level security;
 alter table supplier_products enable row level security;
 alter table documents     enable row level security;
 alter table app_settings  enable row level security;
+alter table shift_types   enable row level security;
+alter table roster        enable row level security;
+alter table punches       enable row level security;
+alter table ot_requests   enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

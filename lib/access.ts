@@ -51,7 +51,7 @@ export const GRANTABLE_TABS = [
 ]
 
 // Pages every logged-in person gets, whatever their role.
-const EVERYONE = ['/account', '/scan']
+const EVERYONE = ['/account', '/scan', '/clock']
 
 // The first part of a path, so /leads/123 follows the rule for /leads.
 const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')

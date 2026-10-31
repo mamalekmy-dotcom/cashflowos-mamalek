@@ -3,7 +3,6 @@
 // Usage:  npm run create-owner -- you@example.com "Your Name" 123456789
 // The Telegram ID is optional. You type the password here, and it's never shown.
 // Reads SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from .env (via --env-file).
-import readline from 'node:readline/promises'
 import { createClient } from '@supabase/supabase-js'
 
 const [emailArg, name, telegramArg] = process.argv.slice(2)
@@ -22,13 +21,41 @@ if (!url || !key) {
 const email = emailArg.trim().toLowerCase()
 const telegram_id = telegramArg ? Number(telegramArg) : null
 
-// Ask for the password without echoing what's typed.
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true })
-const write = rl._writeToOutput.bind(rl)
-rl._writeToOutput = text => { if (text.includes('Password')) write(text) }
-const password = await rl.question('Password for this account (at least 10 characters): ')
-rl.close()
-console.log('')
+// Reads the password key by key, showing a * for each so it's clear typing works.
+function askPassword(prompt) {
+  const { stdin, stdout } = process
+  stdout.write(prompt)
+  return new Promise(resolve => {
+    let value = ''
+    const finish = () => {
+      if (stdin.isTTY) stdin.setRawMode(false)
+      stdin.removeListener('data', onData)
+      stdin.pause()
+      stdout.write('\n')
+      resolve(value)
+    }
+    const onData = chunk => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') return finish()
+        if (ch === '\u0003') process.exit(1) // Ctrl+C
+        if (ch === '\u007f' || ch === '\b') {
+          if (value) stdout.write('\b \b')
+          value = value.slice(0, -1)
+        } else {
+          value += ch
+          stdout.write('*')
+        }
+      }
+    }
+    if (stdin.isTTY) stdin.setRawMode(true)
+    stdin.setEncoding('utf8')
+    stdin.on('data', onData)
+    stdin.once('end', finish)
+    stdin.resume()
+  })
+}
+
+const password = await askPassword('Password for this account (at least 10 characters): ')
 if (password.length < 10) {
   console.error('That password is too short. Nothing was changed.')
   process.exit(1)

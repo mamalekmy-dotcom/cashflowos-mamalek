@@ -1,6 +1,7 @@
 import 'server-only'
 import type { Rec } from './records'
 import { rm, todayISO, getFunnel, isCashReceived, cashReceivedAt } from './records'
+import { supabase } from './supabase'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Jarvis bot's HANDS. Instead of dumping your whole table into the prompt,
@@ -21,9 +22,9 @@ export const BOT_TOOLS = [
   {
     name: 'get_cash_summary',
     description:
-      'Get cash in (money actually received, never unpaid invoices), cash out, net, and how much is ' +
-      'still owed to the owner, for a time window. ' +
-      'Use this for ANY money total question ("how much cash in this week?", "what\'s my net this month?", "who owes me?").',
+      'Get invoice money received, filed expenses, net, and how much is still owed to the owner, for a ' +
+      'time window. This does NOT include the restaurant\'s daily takings: use get_sales for those. ' +
+      'Use this for invoices, expenses and "who owes me?".',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -31,6 +32,25 @@ export const BOT_TOOLS = [
           type: 'string',
           enum: ['week', 'month', 'all'],
           description: 'week = last 7 days, month = last 30 days, all = everything. Default all.',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_sales',
+    description:
+      'Get the restaurant\'s daily POS sales: net sales, trading days, pax, receipts, average per day and ' +
+      'per pax, best and worst day, dine-in vs takeaway, and payment split. Use this for ANY question about ' +
+      'sales, takings, revenue or pax ("how much sales this month?", "best day in August?", "cash in this week?"). ' +
+      'Always tell the owner the latest_logged date when it is before the period asked about.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month: { type: 'string', description: 'A calendar month as YYYY-MM, e.g. 2026-09. Takes priority over period.' },
+        period: {
+          type: 'string',
+          enum: ['latest_month', 'this_month', 'last_7_days', 'all'],
+          description: 'latest_month = the most recent month with sales logged. Default latest_month.',
         },
       },
     },
@@ -175,6 +195,89 @@ const CLOSED_LOST = new Set(['closed', 'nurture', 'lost', 'reversed'])
 // Whole days a due date is past today (>=0).
 const daysLate = (due: string, today: string) =>
   Math.max(0, Math.floor((Date.parse(today) - Date.parse(due)) / 86_400_000))
+
+// The API returns at most 1000 rows at a time, so long ranges are read page by page.
+const SALES_PAGE = 1000
+type SalesDay = { sale_date: string; net_sales: number; dine_in: number; to_go: number; receipts: number; pax: number; cash: number; qr: number; card: number; online: number }
+
+async function salesBetween(from: string, to: string): Promise<SalesDay[]> {
+  const days: SalesDay[] = []
+  for (let start = 0; ; start += SALES_PAGE) {
+    const { data, error } = await supabase
+      .from('daily_sales')
+      .select('sale_date, net_sales, dine_in, to_go, receipts, pax, cash, qr, card, online')
+      .gte('sale_date', from)
+      .lte('sale_date', to)
+      .order('sale_date')
+      .range(start, start + SALES_PAGE - 1)
+    if (error) throw new Error(error.message)
+    days.push(...((data ?? []) as SalesDay[]))
+    if ((data ?? []).length < SALES_PAGE) return days
+  }
+}
+
+// Sales live in daily_sales, not the records rows the other tools read, so this one
+// does its own query and the bot's loop awaits it. Never throws.
+export async function runSalesTool(input: any): Promise<string> {
+  try {
+    const today = todayISO()
+    const { data: latest } = await supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1)
+    const lastDate = latest?.[0]?.sale_date as string | undefined
+    if (!lastDate) return JSON.stringify({ error: 'No sales have been logged yet.' })
+
+    const period = input?.period ?? 'latest_month'
+    const monthEnd = (month: string) => {
+      const [y, m] = month.split('-').map(Number)
+      return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+    }
+    let from: string
+    let to: string
+    if (/^\d{4}-\d{2}$/.test(input?.month ?? '')) {
+      from = `${input.month}-01`
+      to = monthEnd(input.month)
+    } else if (period === 'all') {
+      from = '2000-01-01'
+      to = today
+    } else if (period === 'this_month') {
+      from = `${today.slice(0, 7)}-01`
+      to = today
+    } else if (period === 'last_7_days') {
+      from = new Date(Date.parse(today) - 6 * 86_400_000).toISOString().slice(0, 10)
+      to = today
+    } else {
+      from = `${lastDate.slice(0, 7)}-01`
+      to = lastDate
+    }
+
+    const days = await salesBetween(from, to)
+    if (days.length === 0) return JSON.stringify({ from, to, trading_days: 0, latest_logged: lastDate, message: `No sales logged for this period. Sales are logged up to ${lastDate}.` })
+
+    const add = (key: keyof SalesDay) => days.reduce((s, d) => s + Number(d[key]), 0)
+    const total = add('net_sales')
+    const pax = add('pax')
+    const byNet = [...days].sort((a, b) => Number(b.net_sales) - Number(a.net_sales))
+    const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    return JSON.stringify({
+      from: days[0].sale_date,
+      to: days[days.length - 1].sale_date,
+      latest_logged: lastDate,
+      trading_days: days.length,
+      net_sales: money(total),
+      average_per_day: money(total / days.length),
+      pax,
+      receipts: add('receipts'),
+      average_per_pax: pax ? money(total / pax) : null,
+      best_day: { date: byNet[0].sale_date, net_sales: money(Number(byNet[0].net_sales)) },
+      worst_day: { date: byNet[byNet.length - 1].sale_date, net_sales: money(Number(byNet[byNet.length - 1].net_sales)) },
+      dine_in: money(add('dine_in')),
+      takeaway: money(add('to_go')),
+      payments_including_tax: { cash: money(add('cash')), qr: money(add('qr')), card: money(add('card')), online: money(add('online')) },
+    })
+  } catch (e) {
+    console.error('[CFO] sales tool failed:', e)
+    return JSON.stringify({ error: 'Could not read sales right now.' })
+  }
+}
 
 // ------------------------------------------------------------
 // runBotTool() — execute ONE tool against the already-fetched records. Returns a

@@ -88,7 +88,7 @@ export default async function Pulse({ searchParams }: { searchParams: Promise<{ 
           ))}
         </tbody>
       </table>
-      <p className="cap">{receipts.toLocaleString('en-MY')} receipts · {pax.toLocaleString('en-MY')} pax · {byDay.size} trading days</p>
+      <p className="cap figure">{receipts.toLocaleString('en-MY')} receipts · {pax.toLocaleString('en-MY')} pax · {byDay.size} trading days</p>
 
       <UploadSales />
       <AddCost defaultDate={today} />

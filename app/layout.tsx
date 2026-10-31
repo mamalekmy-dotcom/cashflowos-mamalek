@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import Nav from './_components/Nav'
 import BottomNav from './_components/BottomNav'
 import ConnStatus from './_components/ConnStatus'
+import EyeToggle, { EYE_INIT_SCRIPT } from './_components/EyeToggle'
 import { getPendingCount } from '@/lib/records'
 import { getCurrentUser } from '@/lib/auth'
 
@@ -34,8 +35,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const access = { role: user.role, extra_tabs: user.extra_tabs }
   const pending = user.role === 'owner' ? await getPendingCount() : 0
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
+        <script dangerouslySetInnerHTML={{ __html: EYE_INIT_SCRIPT }} />
+        <EyeToggle />
         <div className="app">
           {/* Desktop sidebar — hidden on phones (BottomNav takes over ≤768px). */}
           <aside className="side">

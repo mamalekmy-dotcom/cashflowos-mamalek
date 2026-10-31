@@ -43,7 +43,7 @@ export default async function Suppliers() {
         return (
           <div className="admin-card" key={supplier.id}>
             <p className="rowlabel" style={{ marginBottom: 2 }}>{supplier.name}</p>
-            <p className="cap" style={{ margin: '0 0 10px' }}>
+            <p className="cap figure" style={{ margin: '0 0 10px' }}>
               {accepted.length} docs · {rm(spend)} · {supplier.phone ?? 'No contact on file'}
             </p>
             {theirs.length ? (

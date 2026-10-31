@@ -199,6 +199,13 @@ async function handleCallback(cb: any): Promise<Response> {
 async function handleMessage(msg: any): Promise<Response> {
   const chatId = msg.chat?.id
 
+  // Group notices (upgraded, member joined, pinned) carry no text or file, and a
+  // bot sender is never a person to authorize. Telegram's shared anonymous-admin id
+  // lands here too: replying would invite someone to allowlist it, so stay silent.
+  if (msg.from?.is_bot || !(msg.text || msg.photo || msg.document)) {
+    return Response.json({ ok: true })
+  }
+
   // Allowlist on the sender — fail closed, echo the id.
   if (!isAllowed(msg.from?.id)) {
     await sendMessage(

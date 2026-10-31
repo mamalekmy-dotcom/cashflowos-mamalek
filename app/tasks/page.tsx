@@ -13,7 +13,7 @@ export default async function Tasks() {
   const today = todayISO()
   const all = await getRecords()
   const rows = all
-    .filter(r => r.category === 'task')
+    .filter(r => r.category === 'task' && (r.status || '').toLowerCase() !== 'reversed')
     .sort((a, b) => ((a.due_date ?? '9999') < (b.due_date ?? '9999') ? -1 : 1))
 
   const isOverdue = (r: (typeof rows)[number]) =>

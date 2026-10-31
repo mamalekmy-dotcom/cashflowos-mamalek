@@ -280,7 +280,8 @@ export async function proposeAndNotify(args: {
 // ------------------------------------------------------------
 // undoAction() — the /undo-<id> soft reversal (owner-only, ≤24h).
 //
-// SOFT by design: it NEVER deletes. It posts a REVERSAL records row (a negative
+// SOFT by design: it NEVER deletes. It marks the original row 'reversed' (so an undone
+// task, lead or invoice stops counting as live), posts a REVERSAL records row (a negative
 // entry that nets the money back out) and stamps the original action as undone.
 // Guards fail closed: only an already-'executed' action, only within 24h, only once.
 // This is what makes 🟢 autopilot safe — a wrong auto-file is one reply away from
@@ -315,13 +316,28 @@ export async function undoAction(
   if (!recordId) {
     return { ok: false, message: `Nothing to reverse for #${actionId} (no record was created).` }
   }
+  // An update (mark paid, move a lead) changed an existing row, and the old status
+  // isn't kept, so a reversal here would corrupt that row instead of restoring it.
+  if ((action.result as any)?.kind === 'record_updated') {
+    return { ok: false, message: `#${actionId} changed an existing record, so /undo can't reverse it. Nothing was changed.` }
+  }
 
-  // Read the original row so the reversal mirrors it (soft — we don't touch it).
+  // Read the original row so the reversal mirrors it.
   const { data: origRows } = await supabase.from('records').select('*').eq('id', recordId)
   const orig = origRows?.[0]
   if (!orig) return { ok: false, message: `The original record for #${actionId} is gone — nothing to reverse.` }
 
-  // 1) Post the reversal (a negative mirror so the totals net to zero).
+  // 1) Close the original so it stops counting as live. Its old status stays in meta.
+  const { error: closeErr } = await supabase
+    .from('records')
+    .update({ status: 'reversed', meta: { ...(orig.meta || {}), status_before_undo: orig.status } })
+    .eq('id', orig.id)
+  if (closeErr) {
+    console.error('[CFO] undo close failed:', closeErr.message)
+    return { ok: false, message: 'Could not reverse that — try again.' }
+  }
+
+  // 2) Post the reversal (a negative mirror so the totals net to zero).
   const { data: revRows, error: revErr } = await supabase
     .from('records')
     .insert({
@@ -336,11 +352,12 @@ export async function undoAction(
     .select()
   if (revErr) {
     console.error('[CFO] undo reversal insert failed:', revErr.message)
+    await supabase.from('records').update({ status: orig.status, meta: orig.meta }).eq('id', orig.id)
     return { ok: false, message: 'Could not post the reversal — try again.' }
   }
   const reversalId = revRows?.[0]?.id ?? null
 
-  // 2) Stamp the action undone (into result — there's no meta column on agent_actions).
+  // 3) Stamp the action undone (into result — there's no meta column on agent_actions).
   await supabase
     .from('agent_actions')
     .update({

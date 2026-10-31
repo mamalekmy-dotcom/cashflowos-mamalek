@@ -19,6 +19,7 @@ const MORE: MoreTab[] = [
   { href: '/leads', label: 'Leads', ico: '🧲' },
   { href: '/customers', label: 'Customers', ico: '🧑‍🤝‍🧑' },
   { href: '/content', label: 'Content', ico: '📣' },
+  { href: '/marketing', label: 'Marketing', ico: '📈' },
   { href: '/tasks', label: 'Tasks', ico: '✅' },
   { href: '/employees', label: 'AI Employees', ico: '🤖' },
   { href: '/vault', label: 'Vault', ico: '🗄️' },

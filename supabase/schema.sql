@@ -130,6 +130,43 @@ create table if not exists app_sessions (
 create index if not exists app_sessions_user_id_idx on app_sessions (user_id);
 
 -- ------------------------------------------------------------
+-- 9) daily_sales — one row per trading day, so re-uploading a report replaces the
+--    day instead of doubling it. Kept out of records: it would grow past the API's
+--    row limit and every page loads all of records.
+-- ------------------------------------------------------------
+create table if not exists daily_sales (
+  sale_date  date        primary key,
+  net_sales  numeric     not null default 0,
+  dine_in    numeric     not null default 0,
+  to_go      numeric     not null default 0,
+  delivery   numeric     not null default 0,
+  discount   numeric     not null default 0,
+  voids      numeric     not null default 0,
+  receipts   integer     not null default 0,
+  pax        integer     not null default 0,
+  cash       numeric     not null default 0,
+  qr         numeric     not null default 0,
+  card       numeric     not null default 0,
+  online     numeric     not null default 0,
+  source     text        not null default 'manual',    -- manual | colmo
+  updated_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 10) cost_entries — what P&L Pulse splits sales into.
+-- ------------------------------------------------------------
+create table if not exists cost_entries (
+  id         bigint generated always as identity primary key,
+  entry_date date        not null,
+  category   text        not null check (category in ('food', 'labor', 'rent', 'other')),
+  amount     numeric     not null check (amount >= 0),
+  note       text,
+  created_by bigint      references app_users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists cost_entries_date_idx on cost_entries (entry_date);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -142,6 +179,8 @@ alter table bot_memory    enable row level security;
 alter table tg_updates    enable row level security;
 alter table app_users     enable row level security;
 alter table app_sessions  enable row level security;
+alter table daily_sales   enable row level security;
+alter table cost_entries  enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

@@ -10,6 +10,7 @@ import { accessLevel, type AccessUser } from '@/lib/access'
 //    10 sections stay reachable on a phone. Keep this in sync with Nav.tsx.
 const TABS: MoreTab[] = [
   { href: '/', label: 'Dashboard', ico: '🏠' },
+  { href: '/pulse', label: 'P&L Pulse', ico: '📈' },
   { href: '/cash-in', label: 'Cash In', ico: '💰' },
   { href: '/cash-out', label: 'Cash Out', ico: '🧾' },
   { href: '/approvals', label: 'Approvals', ico: '🙋' },

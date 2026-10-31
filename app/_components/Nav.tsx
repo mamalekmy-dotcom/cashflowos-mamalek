@@ -13,6 +13,7 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/', label: 'Dashboard' },
   ] },
   { label: 'Money', tabs: [
+    { href: '/pulse', label: 'P&L Pulse' },
     { href: '/cash-in', label: 'Cash In' },
     { href: '/cash-out', label: 'Cash Out' },
   ] },

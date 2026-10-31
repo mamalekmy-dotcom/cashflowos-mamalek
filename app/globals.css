@@ -285,6 +285,15 @@ code {
 .admin-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-13); padding: 16px; margin-bottom: 14px; max-width: 640px; }
 .admin-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin: 12px 0; }
 .admin-tab { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-soft); }
+.pulse-head { display: flex; align-items: center; justify-content: space-between; max-width: 640px; margin-bottom: 10px; }
+.pulse-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; max-width: 640px; }
+.pulse-dow { text-align: center; font-size: 11px; color: var(--dim); }
+.pulse-day { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 62px; padding: 7px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--r-8); cursor: pointer; font-family: inherit; color: var(--ink); text-align: left; }
+.pulse-day.has-sales { background: var(--card); border-color: var(--line-2); }
+.pulse-day.editing { grid-column: span 3; cursor: default; }
+.pulse-num { font-size: 12px; font-weight: 600; }
+.pulse-amount { font-size: 12px; color: var(--ink-soft); }
+.pulse-input { padding: 6px 8px; font-size: 14px; }
 
 /* ---- Two-row dashboard: money row lives in .grid; funnel above it ---- */
 .rowlabel { font-size: 13px; color: var(--ink-soft); font-weight: 600; margin: 0 0 10px; }

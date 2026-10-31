@@ -206,14 +206,9 @@ async function handleMessage(msg: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
-  // Allowlist on the sender — fail closed, echo the id.
-  if (!isAllowed(msg.from?.id)) {
-    await sendMessage(
-      chatId,
-      `Not authorized. Your Telegram id is ${msg.from?.id} — add it to TELEGRAM_ALLOWED_USER_IDS, then redeploy.`,
-    )
-    return Response.json({ ok: true })
-  }
+  // Allowlist on the sender — fail closed and stay silent, so anyone not on the list
+  // gets no reply at all, not even a refusal.
+  if (!isAllowed(msg.from?.id)) return Response.json({ ok: true })
 
   // Photo / document → the Vault agent. ACK-FIRST (MANDATED): the ONLY work we do
   // before returning 200 is {secret (done in POST), allowlist (just above),

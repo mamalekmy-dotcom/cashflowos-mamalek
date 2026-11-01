@@ -23,6 +23,8 @@ const TABS: MoreTab[] = [
   { href: '/chat', label: 'Chat', ico: '💬' },
   { href: '/clock', label: 'Clock in', ico: '⏰' },
   { href: '/team', label: 'Talent HQ', ico: '👥' },
+  { href: '/me', label: 'My HR', ico: '🪪' },
+  { href: '/hr', label: 'HR', ico: '🧑‍💼' },
   { href: '/suppliers', label: 'Suppliers', ico: '🚚' },
   { href: '/stock', label: 'Stock', ico: '📦' },
   { href: '/scan', label: 'Scan', ico: '📷' },

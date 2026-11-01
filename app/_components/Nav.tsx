@@ -34,6 +34,8 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/chat', label: 'Chat' },
     { href: '/clock', label: 'Clock in' },
     { href: '/team', label: 'Talent HQ' },
+    { href: '/me', label: 'My HR' },
+    { href: '/hr', label: 'HR' },
   ] },
   { label: 'Purchasing', tabs: [
     { href: '/suppliers', label: 'Suppliers' },

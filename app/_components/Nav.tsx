@@ -27,7 +27,7 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/clock', label: 'Clock in' },
     { href: '/team/history', label: 'Clock history' },
     { href: '/hr/leave', label: 'Leave approvals' },
-    { href: '/team', label: 'Talent HQ' },
+    { href: '/team', label: 'Team Roster' },
     { href: '/chat', label: 'Chat' },
     { href: '/hr', label: 'HR' },
   ] },

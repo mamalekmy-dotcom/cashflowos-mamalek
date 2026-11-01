@@ -164,7 +164,7 @@ export default async function TalentHQ({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <h1 className="ph">Talent HQ</h1>
+      <h1 className="ph">Team Roster</h1>
       <p className="cap">Team, roster and overtime.</p>
       <div className="btnrow" style={{ flexWrap: 'wrap', marginBottom: 16 }}>
         {TABS.map(([key, label]) => (

@@ -50,7 +50,7 @@ export default async function ClockHistory({ searchParams }: { searchParams: Pro
   return (
     <>
       <h1 className="ph">Clock history</h1>
-      <p className="cap">{person ? `${nameOf(person)}, the ${PERSON_DAYS} days up to ${day}` : day} · {rows.length} punches · <Link href="/team">Talent HQ</Link></p>
+      <p className="cap">{person ? `${nameOf(person)}, the ${PERSON_DAYS} days up to ${day}` : day} · {rows.length} punches · <Link href="/team">Team Roster</Link></p>
 
       <div className="pulse-head">
         <Link className="btn ghost" href={link(addDays(day, -1))} aria-label="Previous day">‹</Link>

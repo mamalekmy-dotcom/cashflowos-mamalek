@@ -41,10 +41,27 @@ async function latestCosts() {
   return data
 }
 
+// Sales keyed into Daily Report for the latest month that has any. This is money
+// collected, so it includes tax and service charge, unlike POS net sales.
+async function keyedSales() {
+  if (!supabaseConfigured) return null
+  const { data: latest } = await supabase.from('daily_reports').select('report_date').order('report_date', { ascending: false }).limit(1)
+  const lastDate = latest?.[0]?.report_date as string | undefined
+  if (!lastDate) return null
+  const month = lastDate.slice(0, 7)
+  const { data } = await supabase.from('daily_reports').select('cash, qr, card').gte('report_date', `${month}-01`).lte('report_date', lastDate)
+  const total = (data ?? []).reduce((sum, d) => sum + Number(d.cash) + Number(d.qr) + Number(d.card), 0)
+  return { month, lastDate, total }
+}
+
 export default async function Dashboard() {
-  const [rows, waiting, sales, leave, costs] = await Promise.all([
-    getRecords(), proposedCount(), latestMonthSales(), leaveWaiting(), latestCosts(),
+  const [rows, waiting, pos, keyed, leave, costs] = await Promise.all([
+    getRecords(), proposedCount(), latestMonthSales(), keyedSales(), leaveWaiting(), latestCosts(),
   ])
+  // Keyed sales take over from the month they start. Until then the last POS month shows.
+  const sales = keyed && (!pos || keyed.month >= pos.month)
+    ? { label: `Sales collected ${keyed.month}`, total: keyed.total, lastDate: keyed.lastDate }
+    : pos && { label: `Sales ${pos.month}`, total: pos.total, lastDate: pos.lastDate }
   const share = (amount: number) => `${((amount / Number(costs?.net_sales)) * 100).toFixed(1)}%`
   const totalCost = Number(costs?.cogs) + Number(costs?.labor) + Number(costs?.rent)
   const costMonth = costs
@@ -78,7 +95,7 @@ export default async function Dashboard() {
       {/* Row 1 — sales, plus what's waiting on an owner */}
       <p className="rowlabel">Sales Overview</p>
       <div className="grid">
-        {sales ? <Stat label={`Sales ${sales.month}`} value={rm(sales.total)} /> : null}
+        {sales ? <Stat label={sales.label} value={rm(sales.total)} href="/report" /> : null}
         <Stat label="Invoices paid" value={rm(cashIn)} />
         <Stat label="Pending leave approval" value={leave} yes={leave > 0} href="/hr/leave" />
         <Stat label="Approval" value={waiting} yes={waiting > 0} href="/approvals" />

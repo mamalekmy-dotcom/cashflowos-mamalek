@@ -6,6 +6,7 @@ import { accessLevel } from '@/lib/access'
 import { getCurrentUser } from '@/lib/auth'
 import { todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
+import { SALES_FIELDS, type SalesValues } from './fields'
 
 type Result = { ok: boolean; message: string }
 
@@ -20,14 +21,19 @@ async function editor() {
   return user && accessLevel(user, '/report') === 'edit' ? user : null
 }
 
-export async function saveSales(day: string, input: { cash: number; qr: number; card: number }): Promise<Result> {
+export async function saveSales(day: string, input: SalesValues): Promise<Result> {
   const user = await editor()
   if (!user) return fail('You do not have access to this.')
   if (!validDay(day)) return fail('Pick today or an earlier day.')
-  if (![input.cash, input.qr, input.card].every(n => Number.isFinite(n) && n >= 0)) return fail('Enter amounts as numbers.')
+  const row: Record<string, number> = {}
+  for (const field of SALES_FIELDS) {
+    const n = input[field.key]
+    if (!Number.isFinite(n)) return fail(`${field.label} must be a number.`)
+    if (n < 0 && !('canBeNegative' in field)) return fail(`${field.label} can't be below zero.`)
+    row[field.key] = n
+  }
   const { error } = await supabase.from('daily_reports').upsert({
-    report_date: day, cash: input.cash, qr: input.qr, card: input.card,
-    updated_by: user.id, updated_at: new Date().toISOString(),
+    ...row, report_date: day, updated_by: user.id, updated_at: new Date().toISOString(),
   })
   if (error) return fail(error.message)
   revalidatePath('/report')

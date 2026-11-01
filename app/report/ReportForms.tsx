@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { addPurchase, removePurchase, saveSales } from './actions'
+import { SALES_FIELDS, type SalesKey, type SalesValues } from './fields'
 
 const gap = { marginTop: 10 }
 const frame = { width: '100%', maxWidth: 360, borderRadius: 12, display: 'block', background: '#000' }
@@ -85,23 +86,22 @@ function Amount({ label, value, onChange }: { label: string; value: string; onCh
   )
 }
 
-export function SalesForm({ day, saved }: { day: string; saved: { cash: number; qr: number; card: number } | null }) {
-  const start = (n?: number) => (n ? String(n) : '')
-  const [cash, setCash] = useState(start(saved?.cash))
-  const [qr, setQr] = useState(start(saved?.qr))
-  const [card, setCard] = useState(start(saved?.card))
+export function SalesForm({ day, saved }: { day: string; saved: Partial<SalesValues> | null }) {
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(SALES_FIELDS.map(f => [f.key, saved?.[f.key] ? String(saved[f.key]) : ''])) as Record<SalesKey, string>)
   const [message, setMessage] = useState('')
   const [pending, run] = useTransition()
 
   return (
     <form className="admin-card" onSubmit={e => {
       e.preventDefault()
-      run(async () => setMessage((await saveSales(day, { cash: Number(cash), qr: Number(qr), card: Number(card) })).message))
+      const numbers = Object.fromEntries(SALES_FIELDS.map(f => [f.key, Number(values[f.key])])) as SalesValues
+      run(async () => setMessage((await saveSales(day, numbers)).message))
     }}>
-      <p className="rowlabel">Sales collected</p>
-      <Amount label="Cash sales (RM)" value={cash} onChange={setCash} />
-      <Amount label="QR sales (RM)" value={qr} onChange={setQr} />
-      <Amount label="Card sales (RM)" value={card} onChange={setCard} />
+      <p className="rowlabel">Sales report</p>
+      {SALES_FIELDS.map(f => (
+        <Amount key={f.key} label={f.label} value={values[f.key]} onChange={v => setValues(s => ({ ...s, [f.key]: v }))} />
+      ))}
       {message ? <p className="cap" style={{ margin: '10px 0 0' }}>{message}</p> : null}
       <button className="btn" type="submit" disabled={pending} style={{ marginTop: 12 }}>{pending ? 'Saving…' : 'Save sales'}</button>
     </form>

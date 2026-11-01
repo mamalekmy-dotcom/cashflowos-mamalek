@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Stat from '@/app/_components/Stat'
 import { rm, todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
+import { SALES_COLUMNS, type SalesValues } from './fields'
 import { PurchaseForm, RemovePurchase, SalesForm } from './ReportForms'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,7 @@ const SUPPLIER_DAYS = 90
 const SIGNED_URL_SECONDS = 3600
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 
-type Sales = { report_date: string; cash: number; qr: number; card: number }
+type Sales = SalesValues & { report_date: string }
 type Bought = { id: number; purchase_date: string; supplier: string; amount: number; note: string | null; photo_path: string | null }
 const collected = (s: Sales) => Number(s.cash) + Number(s.qr) + Number(s.card)
 
@@ -24,12 +25,12 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
   const monthEnd = addDays(addDays(monthStart, 32).slice(0, 7) + '-01', -1)
 
   const [{ data: sales }, { data: bought }, { data: pos }, { data: known }] = await Promise.all([
-    supabase.from('daily_reports').select('report_date, cash, qr, card').gte('report_date', monthStart).lte('report_date', monthEnd).order('report_date', { ascending: false }),
+    supabase.from('daily_reports').select(`report_date, ${SALES_COLUMNS}`).gte('report_date', monthStart).lte('report_date', monthEnd).order('report_date', { ascending: false }),
     supabase.from('daily_purchases').select('id, purchase_date, supplier, amount, note, photo_path').gte('purchase_date', monthStart).lte('purchase_date', monthEnd).order('id'),
     supabase.from('daily_sales').select('cash, qr, card').eq('sale_date', day).maybeSingle(),
     supabase.from('purchases').select('supplier').gte('purchase_date', addDays(today, -SUPPLIER_DAYS)),
   ])
-  const month = (sales ?? []) as Sales[]
+  const month = (sales ?? []) as unknown as Sales[]
   const buys = (bought ?? []) as Bought[]
   const saved = month.find(s => s.report_date === day) ?? null
   const dayBuys = buys.filter(b => b.purchase_date === day)
@@ -74,7 +75,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
         </p>
       ) : null}
 
-      <SalesForm key={`${day}-${saved ? collected(saved) : 0}`} day={day} saved={saved && { cash: Number(saved.cash), qr: Number(saved.qr), card: Number(saved.card) }} />
+      <SalesForm key={day} day={day} saved={saved} />
       <PurchaseForm key={`buy-${day}`} day={day} suppliers={suppliers} />
 
       <p className="rowlabel" style={{ marginTop: 20 }}>Purchases on {day}</p>

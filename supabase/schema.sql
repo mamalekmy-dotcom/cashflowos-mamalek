@@ -399,6 +399,21 @@ create table if not exists daily_reports (
   updated_at  timestamptz not null default now()
 );
 
+alter table daily_reports
+  add column if not exists sales_total    numeric not null default 0,
+  add column if not exists cost_total     numeric not null default 0,
+  add column if not exists profit_total   numeric not null default 0,
+  add column if not exists total_discount numeric not null default 0,
+  add column if not exists total_void     numeric not null default 0,
+  add column if not exists total_tax      numeric not null default 0,
+  add column if not exists unpaid_total   numeric not null default 0,
+  add column if not exists total_pay_in   numeric not null default 0,
+  add column if not exists total_pay_out  numeric not null default 0,
+  add column if not exists receipt_count  numeric not null default 0,
+  add column if not exists receipt_avg    numeric not null default 0,
+  add column if not exists total_pax      numeric not null default 0,
+  add column if not exists avg_per_pax    numeric not null default 0;
+
 create table if not exists daily_purchases (
   id            bigint generated always as identity primary key,
   purchase_date date        not null,

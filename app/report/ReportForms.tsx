@@ -1,8 +1,80 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { addPurchase, removePurchase, saveSales } from './actions'
 
 const gap = { marginTop: 10 }
+const frame = { width: '100%', maxWidth: 360, borderRadius: 12, display: 'block', background: '#000' }
+
+// Two ways in: the live camera, on a phone or a laptop, or a file already saved.
+function InvoicePhoto({ photo, onChange }: { photo: File | null; onChange: (file: File | null) => void }) {
+  const video = useRef<HTMLVideoElement>(null)
+  const [cameraOn, setCameraOn] = useState(false)
+  const [problem, setProblem] = useState('')
+  const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : ''), [photo])
+
+  useEffect(() => {
+    if (!cameraOn) return
+    let stream: MediaStream | null = null
+    let stopped = false
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } }, audio: false })
+      .then(live => {
+        if (stopped) return live.getTracks().forEach(t => t.stop())
+        stream = live
+        if (video.current) video.current.srcObject = live
+      })
+      .catch(() => {
+        setProblem('Could not open the camera. Allow camera access, or use Upload file.')
+        setCameraOn(false)
+      })
+    return () => {
+      stopped = true
+      stream?.getTracks().forEach(t => t.stop())
+    }
+  }, [cameraOn])
+
+  function snap() {
+    const v = video.current
+    if (!v?.videoWidth) return
+    const canvas = document.createElement('canvas')
+    canvas.width = v.videoWidth
+    canvas.height = v.videoHeight
+    canvas.getContext('2d')?.drawImage(v, 0, 0)
+    canvas.toBlob(blob => {
+      if (blob) onChange(new File([blob], 'invoice.jpg', { type: 'image/jpeg' }))
+      setCameraOn(false)
+    }, 'image/jpeg', 0.85)
+  }
+
+  return (
+    <div style={gap}>
+      <p className="cap" style={{ margin: '0 0 6px' }}>Invoice photo (required)</p>
+      {photo ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="Invoice" style={frame} />
+          <button className="btn ghost" type="button" onClick={() => onChange(null)} style={gap}>Change photo</button>
+        </>
+      ) : cameraOn ? (
+        <>
+          <video ref={video} autoPlay playsInline muted style={frame} />
+          <div className="btnrow" style={gap}>
+            <button className="btn" type="button" onClick={snap}>Capture</button>
+            <button className="btn ghost" type="button" onClick={() => setCameraOn(false)}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div className="btnrow" style={{ flexWrap: 'wrap' }}>
+          <button className="btn ghost" type="button" onClick={() => { setProblem(''); setCameraOn(true) }}>Take photo</button>
+          <label className="btn ghost">
+            Upload file
+            <input type="file" accept="image/*" hidden onChange={e => { onChange(e.target.files?.[0] ?? null); e.target.value = '' }} />
+          </label>
+        </div>
+      )}
+      {problem ? <p className="login-error" style={{ margin: '8px 0 0' }}>{problem}</p> : null}
+    </div>
+  )
+}
 
 function Amount({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
@@ -41,7 +113,6 @@ export function PurchaseForm({ day, suppliers }: { day: string; suppliers: strin
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [photo, setPhoto] = useState<File | null>(null)
-  const [photoInput, setPhotoInput] = useState(0)
   const [message, setMessage] = useState('')
   const [pending, run] = useTransition()
 
@@ -63,7 +134,6 @@ export function PurchaseForm({ day, suppliers }: { day: string; suppliers: strin
           setAmount('')
           setNote('')
           setPhoto(null)
-          setPhotoInput(n => n + 1)
         }
       })
     }}>
@@ -78,10 +148,7 @@ export function PurchaseForm({ day, suppliers }: { day: string; suppliers: strin
         Note (optional)
         <input className="login-input" value={note} onChange={e => setNote(e.target.value)} />
       </label>
-      <label className="cap" style={{ display: 'block', ...gap }}>
-        Invoice photo (required)
-        <input key={photoInput} className="login-input" type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} />
-      </label>
+      <InvoicePhoto photo={photo} onChange={setPhoto} />
       {message ? <p className="cap" style={{ margin: '10px 0 0' }}>{message}</p> : null}
       <button className="btn" type="submit" disabled={pending || !supplier || !amount || !photo} style={{ marginTop: 12 }}>{pending ? 'Adding…' : 'Add purchase'}</button>
     </form>

@@ -381,6 +381,8 @@ create table if not exists daily_purchases (
   created_at    timestamptz not null default now()
 );
 create index if not exists daily_purchases_date_idx on daily_purchases (purchase_date);
+-- The invoice photo in the vault bucket. app/report/actions.ts requires one.
+alter table daily_purchases add column if not exists photo_path text;
 
 -- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,

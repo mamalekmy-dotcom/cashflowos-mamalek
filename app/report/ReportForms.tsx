@@ -40,19 +40,30 @@ export function PurchaseForm({ day, suppliers }: { day: string; suppliers: strin
   const [supplier, setSupplier] = useState('')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoInput, setPhotoInput] = useState(0)
   const [message, setMessage] = useState('')
   const [pending, run] = useTransition()
 
   return (
     <form className="admin-card" onSubmit={e => {
       e.preventDefault()
+      if (!photo) return
       run(async () => {
-        const result = await addPurchase(day, supplier, Number(amount), note)
+        const form = new FormData()
+        form.append('day', day)
+        form.append('supplier', supplier)
+        form.append('amount', amount)
+        form.append('note', note)
+        form.append('photo', photo)
+        const result = await addPurchase(form)
         setMessage(result.message)
         if (result.ok) {
           setSupplier('')
           setAmount('')
           setNote('')
+          setPhoto(null)
+          setPhotoInput(n => n + 1)
         }
       })
     }}>
@@ -67,8 +78,12 @@ export function PurchaseForm({ day, suppliers }: { day: string; suppliers: strin
         Note (optional)
         <input className="login-input" value={note} onChange={e => setNote(e.target.value)} />
       </label>
+      <label className="cap" style={{ display: 'block', ...gap }}>
+        Invoice photo (required)
+        <input key={photoInput} className="login-input" type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} />
+      </label>
       {message ? <p className="cap" style={{ margin: '10px 0 0' }}>{message}</p> : null}
-      <button className="btn" type="submit" disabled={pending || !supplier || !amount} style={{ marginTop: 12 }}>{pending ? 'Adding…' : 'Add purchase'}</button>
+      <button className="btn" type="submit" disabled={pending || !supplier || !amount || !photo} style={{ marginTop: 12 }}>{pending ? 'Adding…' : 'Add purchase'}</button>
     </form>
   )
 }

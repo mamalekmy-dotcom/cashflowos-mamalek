@@ -76,6 +76,8 @@ export const AGENTS: AgentMeta[] = [
     emoji: '🏠',
     autonomyNote: '🟡 After a viewing: drafts the follow-up. You send it.',
   },
+  // ---- C-Suite heads ----
+  { key: 'marketing-head', label: 'Head of Marketing', emoji: '📣', autonomyNote: '🟡 Daily: flags ad waste + festivals, Monday spend report. Never spends or posts.' },
 ]
 
 // ------------------------------------------------------------
@@ -279,6 +281,8 @@ export const EXECUTORS: Record<string, Executor> = {
   'leave-claim': (p) => draftOnly('leave-claim', p),
   'renewal-nudge': (p) => draftOnly('renewal-nudge', p),
   'viewing-followup': (p) => draftOnly('viewing-followup', p),
+  // C-Suite heads — recommend-only, so DRAFT-only too.
+  'marketing-head': (p) => draftOnly('marketing-head', p),
 }
 
 // ============================================================
@@ -343,4 +347,6 @@ const overdueInvoiceCheck: ScheduledCheck = {
       }),
 }
 
-export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck]
+import { marketingHeadScheduled } from './marketing-head/check'
+
+export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck, marketingHeadScheduled]

@@ -4,8 +4,8 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import {
-  DEFAULT_COUNT_RULES, canDecideLeave, canSeePerson, isHR, teamOf,
-  type CountRules, type Grant, type PersonLite, type Viewer,
+  DEFAULT_COUNT_RULES, canDecideLeave, canSeePerson, canTrain, isHR, teamOf,
+  type CountRules, type Grant, type PersonLite, type PlanTrainers, type Viewer,
 } from './rules'
 
 // The one place HR pages and actions find out who is asking and what they may touch.
@@ -67,4 +67,31 @@ export async function audit(ctx: HRContext, action: string, entity: string, enti
 export async function countRules(): Promise<CountRules> {
   const { data } = await supabase.from('app_settings').select('value').eq('key', 'hr_leave_count_rules').maybeSingle()
   return { ...DEFAULT_COUNT_RULES, ...((data?.value as Partial<CountRules> | undefined) ?? {}) }
+}
+
+// ---------------------------------------------------------------- training
+// Active plans with their trainers, so a named trainer can reach that trainee's
+// onboarding and training records (and nothing else).
+export const activePlanTrainers = cache(async (): Promise<PlanTrainers[]> => {
+  const { data } = await supabase.from('hr_onboarding_plans').select('person_id, primary_trainer_id, backup_trainer_id').eq('status', 'active')
+  return (data ?? []) as PlanTrainers[]
+})
+
+export async function mayTrain(ctx: HRContext, personId: number): Promise<boolean> {
+  return canTrain(ctx.viewer, ctx.people, personId, await activePlanTrainers())
+}
+
+// People whose training this viewer may record, for filtering lists.
+export async function trainees(ctx: HRContext): Promise<number[]> {
+  const plans = await activePlanTrainers()
+  return ctx.people.filter(p => canTrain(ctx.viewer, ctx.people, p.id, plans)).map(p => p.id)
+}
+
+// For onboarding and training pages: HR, supervisors, trainers, and anyone named
+// as a trainer on a plan. Everyone else goes to their own page.
+export async function requireTrainerView(): Promise<HRContext & { trainees: number[] }> {
+  const ctx = await requireHRContext()
+  const ids = await trainees(ctx)
+  if (!isHR(ctx.viewer) && ids.length === 0) redirect('/me')
+  return { ...ctx, trainees: ids }
 }

@@ -28,7 +28,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
     <>
       <h1 className="ph">People</h1>
       <p className="cap">{people.length} {left ? 'including leavers' : 'current'} · <Link href={left ? '/hr/people' : '/hr/people?left=1'}>{left ? 'Hide leavers' : 'Show leavers'}</Link></p>
-      <HRTabs active="/hr/people" hr={hr} />
+      <HRTabs active="/hr/people" hr={hr} manager trainer />
 
       {hr ? (add
         ? <PersonEditor

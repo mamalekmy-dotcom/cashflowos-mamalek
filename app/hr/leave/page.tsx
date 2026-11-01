@@ -44,7 +44,7 @@ export default async function TeamLeave() {
     <>
       <h1 className="ph">Leave</h1>
       <p className="cap">Requests from {isHR(ctx.viewer) ? 'everyone' : 'your team'}. Nobody can decide their own.</p>
-      <HRTabs active="/hr/leave" hr={isHR(ctx.viewer)} />
+      <HRTabs active="/hr/leave" hr={isHR(ctx.viewer)} manager trainer />
 
       <p className="rowlabel">To decide · {toDecide.length}</p>
       {toDecide.length ? toDecide.map(r => {

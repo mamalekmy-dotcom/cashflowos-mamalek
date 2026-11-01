@@ -50,6 +50,7 @@ export default async function Dashboard() {
   ])
   const funnel = getFunnel(rows)
   const share = (amount: number) => `${((amount / Number(costs?.net_sales)) * 100).toFixed(1)}%`
+  const totalCost = Number(costs?.cogs) + Number(costs?.labor) + Number(costs?.rent)
   const costMonth = costs
     ? new Date(`${costs.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
     : ''
@@ -84,6 +85,7 @@ export default async function Dashboard() {
             <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} />
             <Stat label="Labour cost" value={share(Number(costs.labor))} sub={rm(Number(costs.labor))} />
             <Stat label="Rental cost" value={share(Number(costs.rent))} sub={rm(Number(costs.rent))} />
+            <Stat label="Total cost" value={share(totalCost)} sub={rm(totalCost)} />
           </div>
         </>
       ) : null}

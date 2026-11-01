@@ -116,6 +116,7 @@ function readStock(sheet, month) {
       sheet_row: n, month, area, section, item: name,
       uom: label(value(row.getCell(COL.uom).value)) || null,
       unit_price: num(value(row.getCell(COL.price).value)),
+      pack_size: [value(row.getCell(COL.volume).value), label(value(row.getCell(COL.uom).value))].filter(Boolean).join(' ') || null,
       opening_qty: openQty, opening_amount: round(openAmt),
       bought_qty: num(value(row.getCell(COL.buyQty).value)), bought_amount: round(buyAmt),
       closing_qty: closeQty, closing_amount: round(closeAmt),
@@ -182,9 +183,19 @@ for (const m of months) {
     check(await db.from('purchases').delete().gte('purchase_date', `${m.month}-01`).lte('purchase_date', last))
     check(await db.from('purchases').insert(m.purchases.rows))
     check(await db.from('stock_counts').delete().eq('month', m.month))
-    check(await db.from('stock_counts').insert(m.stock.rows.map(({ sheet_row, days, ...row }) => row)))
+    check(await db.from('stock_counts').insert(m.stock.rows.map(({ sheet_row, days, pack_size, ...row }) => row)))
   }
   check(await db.from('stock_daily').delete().gte('stock_date', `${m.month}-01`).lte('stock_date', last))
   check(await db.from('stock_daily').insert(m.stock.rows.flatMap(r => r.days.map(d => ({ ...d, item: r.item })))))
   console.log(`Saved ${m.month}`)
 }
+
+// Pack sizes go on the item list, newest month winning. Items added in the app are left alone.
+const { data: listed, error: listError } = await db.from('stock_items').select('id, name, aliases').is('added_by', null)
+if (listError) throw new Error(listError.message)
+const keyOf = name => label(name).toUpperCase()
+const idByName = new Map(listed.flatMap(i => [i.name, ...i.aliases].map(n => [keyOf(n), i.id])))
+const sizes = new Map()
+for (const m of months) for (const r of m.stock.rows) if (r.pack_size && idByName.has(keyOf(r.item))) sizes.set(idByName.get(keyOf(r.item)), r.pack_size)
+for (const [id, pack_size] of sizes) check(await db.from('stock_items').update({ pack_size }).eq('id', id))
+console.log(`Pack sizes set on ${sizes.size} of ${listed.length} items`)

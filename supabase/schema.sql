@@ -383,6 +383,8 @@ create table if not exists stock_items (
 create unique index if not exists stock_items_name_idx on stock_items (upper(trim(name)));
 -- Older spellings of the same item in the Stock workbook.
 alter table stock_items add column if not exists aliases text[] not null default '{}';
+-- What one unit holds, e.g. 250 G. Stock quantities are always counted in units.
+alter table stock_items add column if not exists pack_size text;
 
 -- ------------------------------------------------------------
 -- Daily Report — what the team keys in. Kept apart from daily_sales and purchases,

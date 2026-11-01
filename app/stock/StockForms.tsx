@@ -38,7 +38,7 @@ export function AddItem({ places }: { places: { area: string; section: string }[
   const [area, setArea] = useState(places[0]?.area ?? '')
   const [section, setSection] = useState('')
   const [name, setName] = useState('')
-  const [uom, setUom] = useState('')
+  const [packSize, setPackSize] = useState('')
   const [price, setPrice] = useState('')
   const [message, setMessage] = useState('')
   const [pending, run] = useTransition()
@@ -51,11 +51,11 @@ export function AddItem({ places }: { places: { area: string; section: string }[
       <form onSubmit={e => {
         e.preventDefault()
         run(async () => {
-          const result = await addItem({ area, section, name, uom, price: Number(price) })
+          const result = await addItem({ area, section, name, packSize, price: Number(price) })
           setMessage(result.message)
           if (result.ok) {
             setName('')
-            setUom('')
+            setPackSize('')
             setPrice('')
           }
         })
@@ -65,8 +65,8 @@ export function AddItem({ places }: { places: { area: string; section: string }[
         <Field label="Category" value={section} onChange={setSection} list="stock-sections" />
         <datalist id="stock-sections">{sections.map(s => <option key={s} value={s} />)}</datalist>
         <Field label="Item name" value={name} onChange={setName} />
-        <Field label="Unit (optional)" value={uom} onChange={setUom} />
-        <Field label="Unit price, RM (optional)" value={price} onChange={setPrice} inputMode="decimal" />
+        <Field label="Pack size, e.g. 250 G (optional)" value={packSize} onChange={setPackSize} />
+        <Field label="Price per unit, RM (optional)" value={price} onChange={setPrice} inputMode="decimal" />
         {message ? <p className="cap" style={{ margin: '10px 0 0' }}>{message}</p> : null}
         <button className="btn" type="submit" disabled={pending || !area || !section || !name} style={{ marginTop: 12 }}>
           {pending ? 'Adding…' : 'Add item'}

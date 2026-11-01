@@ -14,7 +14,7 @@ async function editor() {
   return user && accessLevel(user, '/stock') === 'edit' ? user : null
 }
 
-export async function addItem(input: { area: string; section: string; name: string; uom: string; price: number }): Promise<Result> {
+export async function addItem(input: { area: string; section: string; name: string; packSize: string; price: number }): Promise<Result> {
   const user = await editor()
   if (!user) return fail('You do not have access to this.')
   const area = input.area.trim().toUpperCase()
@@ -24,7 +24,7 @@ export async function addItem(input: { area: string; section: string; name: stri
   if (!name) return fail('Enter the item name.')
   if (!Number.isFinite(input.price) || input.price < 0) return fail('Enter the price as a number.')
   const { error } = await supabase.from('stock_items').insert({
-    area, section, name, uom: input.uom.trim() || null, unit_price: input.price, added_by: user.id,
+    area, section, name, pack_size: input.packSize.trim() || null, unit_price: input.price, added_by: user.id,
   })
   if (error) return fail(error.code === '23505' ? 'That item is already on the list.' : error.message)
   revalidatePath('/stock')

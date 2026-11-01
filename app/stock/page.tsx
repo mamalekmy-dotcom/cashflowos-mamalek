@@ -18,7 +18,7 @@ type Count = {
   bought_amount: number
   closing_amount: number
 }
-type Item = { id: number; area: string; section: string; name: string; uom: string | null; unit_price: number; added_by: number | null; aliases: string[] | null }
+type Item = { id: number; area: string; section: string; name: string; uom: string | null; unit_price: number; added_by: number | null; aliases: string[] | null; pack_size: string | null }
 type Daily = { stock_date: string; item: string; qty: number; amount: number }
 type Row = { key: string; id?: number; name: string; uom: string | null; price: number; count?: Count; came?: Daily; removable: boolean }
 
@@ -41,7 +41,7 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
   const monthName = new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
   const [{ data: list }, { data: counted }, { data: daily }] = await Promise.all([
-    supabase.from('stock_items').select('id, area, section, name, uom, unit_price, added_by, aliases').order('sort_order').order('id'),
+    supabase.from('stock_items').select('id, area, section, name, uom, unit_price, added_by, aliases, pack_size').order('sort_order').order('id'),
     supabase.from('stock_counts').select('item, uom, unit_price, closing_qty, opening_amount, bought_amount, closing_amount').eq('month', month).order('id'),
     day
       ? supabase.from('stock_daily').select('stock_date, item, qty, amount').gte('stock_date', `${month}-01`).lte('stock_date', day)
@@ -80,7 +80,7 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
   for (const i of items) {
     const key = keyOf(i.name)
     groupFor(i.area, i.section).rows.push({
-      key, id: i.id, name: i.name, uom: i.uom, price: Number(i.unit_price), count: byName.get(key), came: cameIn.get(key), removable: i.added_by !== null,
+      key, id: i.id, name: i.name, uom: i.pack_size ?? i.uom, price: Number(i.unit_price), count: byName.get(key), came: cameIn.get(key), removable: i.added_by !== null,
     })
   }
   const known = new Set(items.map(i => keyOf(i.name)))
@@ -154,14 +154,14 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
                   <strong>{group.section}</strong> <span className="cap figure">· {group.rows.length} items · {rm(total)}</span>
                 </summary>
                 <table className="tbl" style={{ marginTop: 12 }}>
-                  <thead><tr><th>Item</th><th>Unit</th><th>Unit price</th><th>{day ? 'Came in' : 'Closing qty'}</th><th>Amount</th><th></th></tr></thead>
+                  <thead><tr><th>Item</th><th>Pack size</th><th>Price per unit</th><th>{day ? 'Came in' : 'Closing qty'} (units)</th><th>Amount</th><th></th></tr></thead>
                   <tbody>
                     {group.rows.map(r => (
                       <tr key={r.key}>
                         <td data-label="Item">{r.name}</td>
-                        <td data-label="Unit">{r.count?.uom ?? r.uom ?? ''}</td>
+                        <td data-label="Pack size">{r.uom ?? ''}</td>
                         <td data-label="Amount">{rm(Number(r.count?.unit_price ?? r.price))}</td>
-                        <td data-label={day ? 'Came in' : 'Closing qty'}>{shown(r) != null ? Number(shown(r)).toLocaleString('en-MY') : '—'}</td>
+                        <td data-label={day ? 'Came in (units)' : 'Closing qty (units)'}>{shown(r) != null ? Number(shown(r)).toLocaleString('en-MY') : '—'}</td>
                         <td data-label="Amount">{money(r) != null ? rm(Number(money(r))) : '—'}</td>
                         <td>{r.removable && r.id ? <RemoveItem id={r.id} /> : null}</td>
                       </tr>

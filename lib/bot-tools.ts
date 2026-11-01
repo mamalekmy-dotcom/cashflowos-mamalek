@@ -56,6 +56,19 @@ export const BOT_TOOLS = [
     },
   },
   {
+    name: 'get_cogs',
+    description:
+      'Get COGS for a month: the official TMS COGS, the food cost worked out from stock counts (opening + ' +
+      'bought - closing), and supplier purchases with the top suppliers. Use this for ANY question about ' +
+      'COGS, cost of goods, food cost %, ingredient cost, stock value or purchasing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month: { type: 'string', description: 'A calendar month as YYYY-MM, e.g. 2026-09. Default: the latest month in TMS.' },
+      },
+    },
+  },
+  {
     name: 'list_overdue',
     description:
       'List everything past its due date and not yet done/paid — overdue invoices, tasks, follow-ups.',
@@ -200,6 +213,13 @@ const daysLate = (due: string, today: string) =>
 const SALES_PAGE = 1000
 type SalesDay = { sale_date: string; net_sales: number; dine_in: number; to_go: number; receipts: number; pax: number; cash: number; qr: number; card: number; online: number }
 
+const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const percent = (part: number, whole: number) => whole ? `${(part / whole * 100).toFixed(1)}%` : null
+const monthEnd = (month: string) => {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+}
+
 async function salesBetween(from: string, to: string): Promise<SalesDay[]> {
   const days: SalesDay[] = []
   for (let start = 0; ; start += SALES_PAGE) {
@@ -226,10 +246,6 @@ export async function runSalesTool(input: any): Promise<string> {
     if (!lastDate) return JSON.stringify({ error: 'No sales have been logged yet.' })
 
     const period = input?.period ?? 'latest_month'
-    const monthEnd = (month: string) => {
-      const [y, m] = month.split('-').map(Number)
-      return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
-    }
     let from: string
     let to: string
     if (/^\d{4}-\d{2}$/.test(input?.month ?? '')) {
@@ -256,7 +272,6 @@ export async function runSalesTool(input: any): Promise<string> {
     const total = add('net_sales')
     const pax = add('pax')
     const byNet = [...days].sort((a, b) => Number(b.net_sales) - Number(a.net_sales))
-    const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     // A whole month that TMS covers gets the official figures next to the daily POS totals.
     const month = from.slice(0, 7)
     const { data: tms } = from.endsWith('-01') && to.slice(0, 7) === month
@@ -290,6 +305,81 @@ export async function runSalesTool(input: any): Promise<string> {
   } catch (e) {
     console.error('[CFO] sales tool failed:', e)
     return JSON.stringify({ error: 'Could not read sales right now.' })
+  }
+}
+
+// COGS comes from monthly_pnl (TMS) and from stock_counts + purchases (Stock 2026).
+// Closing stock is next month's opening, because the month's own closing column is
+// often unfilled. OTHERS and PACKAGING aren't food. Never throws.
+export async function runCogsTool(input: any): Promise<string> {
+  try {
+    let month: string | undefined = /^\d{4}-\d{2}$/.test(input?.month ?? '') ? input.month : undefined
+    if (!month) {
+      const { data } = await supabase.from('monthly_pnl').select('month').order('month', { ascending: false }).limit(1)
+      month = data?.[0]?.month
+    }
+    if (!month) return JSON.stringify({ error: 'No monthly figures have been loaded yet.' })
+
+    const [y, m] = month.split('-').map(Number)
+    const nextMonth = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7)
+    const isFood = (r: { section: string }) => !/OTHERS|PACKAGING/i.test(r.section)
+    const [tmsRes, stockRes, nextRes, buysRes, days] = await Promise.all([
+      supabase.from('monthly_pnl').select('net_sales, cogs').eq('month', month).maybeSingle(),
+      supabase.from('stock_counts').select('section, opening_amount, bought_amount').eq('month', month),
+      supabase.from('stock_counts').select('section, opening_amount').eq('month', nextMonth),
+      supabase.from('purchases').select('supplier, amount').gte('purchase_date', `${month}-01`).lte('purchase_date', monthEnd(month)),
+      salesBetween(`${month}-01`, monthEnd(month)),
+    ])
+    const failed = tmsRes.error || stockRes.error || nextRes.error || buysRes.error
+    if (failed) throw new Error(failed.message)
+
+    const tms = tmsRes.data
+    const stock = (stockRes.data ?? []).filter(isFood)
+    const closingRows = (nextRes.data ?? []).filter(isFood)
+    const buys = buysRes.data ?? []
+    const add = <T,>(rows: T[], value: (r: T) => unknown) => rows.reduce((s, r) => s + Number(value(r) || 0), 0)
+
+    const opening = add(stock, r => r.opening_amount)
+    const bought = add(stock, r => r.bought_amount)
+    const closing = add(closingRows, r => r.opening_amount)
+    const posSales = add(days, d => d.net_sales)
+    const used = opening + bought - closing
+
+    const bySupplier = new Map<string, number>()
+    for (const b of buys) bySupplier.set(b.supplier, (bySupplier.get(b.supplier) ?? 0) + Number(b.amount))
+    const top = [...bySupplier].sort((a, b) => b[1] - a[1]).slice(0, 5)
+
+    if (!tms && !stock.length && !buys.length) {
+      return JSON.stringify({ month, message: `No COGS, stock or purchasing data for ${month} yet.` })
+    }
+    return JSON.stringify({
+      month,
+      tms_cogs: tms ? {
+        cogs: money(Number(tms.cogs)),
+        tms_net_sales: money(Number(tms.net_sales)),
+        cogs_percent: percent(Number(tms.cogs), Number(tms.net_sales)),
+      } : null,
+      food_cost_from_stock: stock.length && closing > 0 ? {
+        opening_stock: money(opening),
+        food_bought: money(bought),
+        closing_stock: money(closing),
+        food_used: money(used),
+        pos_sales_before_tax: posSales ? money(posSales) : null,
+        food_cost_percent: percent(used, posSales),
+      } : null,
+      supplier_purchases: buys.length ? {
+        total_all_suppliers_including_non_food: money(add(buys, b => b.amount)),
+        top_suppliers: top.map(([supplier, amount]) => ({ supplier, amount: money(amount) })),
+      } : null,
+      how_to_answer:
+        'Lead with TMS COGS when it is there, because that is the official figure. Then give the stock-based ' +
+        'food cost and say the two use different sales bases: TMS net sales vs POS sales before tax. If ' +
+        'tms_cogs is null, say TMS has no figures for this month. If food_cost_from_stock is null, say the ' +
+        'closing stock count is not in yet.',
+    })
+  } catch (e) {
+    console.error('[CFO] cogs tool failed:', e)
+    return JSON.stringify({ error: 'Could not read COGS right now.' })
   }
 }
 

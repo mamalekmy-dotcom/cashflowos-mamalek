@@ -15,7 +15,7 @@ import { getRecords, rm, todayISO, todayWeekday, upcomingDays } from '@/lib/reco
 import { userByTelegramId } from '@/lib/session'
 import { claim, executeClaimed, summarizeResult, undoAction, runAutopilot, proposeAndNotify } from '@/lib/actions'
 import { readImage, type VisionResult } from '@/lib/vision'
-import { BOT_TOOLS, runBotTool, runSalesTool } from '@/lib/bot-tools'
+import { BOT_TOOLS, runBotTool, runCogsTool, runSalesTool } from '@/lib/bot-tools'
 import { BOT_ACTION_TOOLS, ACTION_TOOL_NAMES, runBotAction } from '@/lib/bot-actions'
 import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
@@ -98,7 +98,7 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024 // ~8 MB — reject bigger BEFORE downloa
 // action tools (bot-actions.ts) so the owner knows what to ask. Telegram HTML.
 const HELP_CARD =
   `🤖 <b>${jarvisName()}</b> — I run your business from your records. Ask me anything:\n\n` +
-  `💰 <b>Money</b> — "sales this month?" · "best day in August?" · "who owes me?"\n` +
+  `💰 <b>Money</b> — "sales this month?" · "COGS in September?" · "who owes me?"\n` +
   `🏞️ <b>Pipeline</b> — "open leads?" · "pipeline value?" · "pending vs won?"\n` +
   `✅ <b>Tasks</b> — "what's due this week?"\n` +
   `📣 <b>Content</b> — "what's scheduled?"\n` +
@@ -500,7 +500,9 @@ async function answerWithTools(chatId: number, text: string, apiKey: string, fro
             ? await runBotAction(t.name, t.input, { chatId: proposalChat, thresholdRM: threshold(), rows })
             : t.name === 'get_sales'
               ? await runSalesTool(t.input)
-              : runBotTool(t.name, t.input, rows)
+              : t.name === 'get_cogs'
+                ? await runCogsTool(t.input)
+                : runBotTool(t.name, t.input, rows)
           if (isAction) toolOutput.push(out)
           return {
             type: 'tool_result' as const,

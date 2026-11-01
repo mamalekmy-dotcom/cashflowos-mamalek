@@ -358,6 +358,22 @@ create table if not exists stock_counts (
 );
 create index if not exists stock_counts_month_idx on stock_counts (month);
 
+-- The outlet's item list, by area and category. Stock imports never touch it.
+create table if not exists stock_items (
+  id         bigint generated always as identity primary key,
+  area       text        not null,
+  section    text        not null,
+  name       text        not null,
+  uom        text,
+  unit_price numeric     not null default 0,
+  sort_order integer     not null default 100000,
+  added_by   bigint      references app_users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists stock_items_name_idx on stock_items (upper(trim(name)));
+-- Older spellings of the same item in the Stock workbook.
+alter table stock_items add column if not exists aliases text[] not null default '{}';
+
 -- ------------------------------------------------------------
 -- Daily Report — what the team keys in. Kept apart from daily_sales and purchases,
 -- which the POS upload and the Stock 2026 import replace wholesale.
@@ -416,6 +432,7 @@ alter table purchases     enable row level security;
 alter table stock_counts  enable row level security;
 alter table daily_reports enable row level security;
 alter table daily_purchases enable row level security;
+alter table stock_items   enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

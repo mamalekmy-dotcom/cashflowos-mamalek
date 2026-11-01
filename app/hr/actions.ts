@@ -16,7 +16,7 @@ const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d)
 const clean = (s: unknown) => (typeof s === 'string' ? s.trim() : '')
 const orNull = (s: unknown) => clean(s) || null
 const PARTS: Part[] = ['full', 'am', 'pm']
-const refresh = () => { revalidatePath('/me'); revalidatePath('/hr', 'layout') }
+const refresh = () => revalidatePath('/hr', 'layout')
 
 async function hrOnly(): Promise<HRContext> {
   const ctx = await requireHRContext()

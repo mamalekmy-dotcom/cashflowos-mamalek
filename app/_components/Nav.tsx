@@ -28,7 +28,6 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/hr/leave', label: 'Leave approvals' },
     { href: '/team', label: 'Talent HQ' },
     { href: '/chat', label: 'Chat' },
-    { href: '/me', label: 'My HR' },
     { href: '/hr', label: 'HR' },
   ] },
   { label: 'Purchasing', tabs: [

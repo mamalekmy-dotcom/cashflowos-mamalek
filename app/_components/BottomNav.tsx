@@ -21,7 +21,6 @@ const TABS: MoreTab[] = [
   { href: '/hr/leave', label: 'Leave approvals', ico: '🌴' },
   { href: '/team', label: 'Talent HQ', ico: '👥' },
   { href: '/chat', label: 'Chat', ico: '💬' },
-  { href: '/me', label: 'My HR', ico: '🪪' },
   { href: '/hr', label: 'HR', ico: '🧑‍💼' },
   { href: '/suppliers', label: 'Suppliers', ico: '🚚' },
   { href: '/stock', label: 'Stock', ico: '📦' },

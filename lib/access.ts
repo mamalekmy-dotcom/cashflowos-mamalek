@@ -45,9 +45,9 @@ export const GRANTABLE_TABS = [
 ]
 
 // Pages every logged-in person gets, whatever their role.
-// /me and /hr are open to everyone because lib/hr/guard.ts decides record by
-// record who sees what there.
-const EVERYONE = ['/account', '/scan', '/clock', '/chat', '/tasks', '/me', '/hr']
+// /hr is open to everyone because lib/hr/guard.ts decides record by record who sees
+// what there.
+const EVERYONE = ['/account', '/scan', '/clock', '/chat', '/tasks', '/hr']
 
 // The first part of a path, so /hr/leave follows the rule for /hr.
 const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')
@@ -63,12 +63,8 @@ export function accessLevel(user: AccessUser, path: string): Level | null {
 // Links for owners only. The HR pages stay open to supervisors through the HR tab, so
 // this hides the shortcut from the menu rather than blocking the page.
 const OWNER_LINKS = ['/hr/leave', '/hr/people']
-// Owners don't use My HR, but it stays for staff: it's how they apply for leave.
-const HIDDEN_FROM_OWNERS = ['/me']
-export const showsTab = (user: AccessUser, href: string) => {
-  if (!accessLevel(user, href)) return false
-  return user.role === 'owner' ? !HIDDEN_FROM_OWNERS.includes(href) : !OWNER_LINKS.includes(href)
-}
+export const showsTab = (user: AccessUser, href: string) =>
+  !!accessLevel(user, href) && (user.role === 'owner' || !OWNER_LINKS.includes(href))
 
 // Where someone lands after login: staff go straight to clock in, everyone else to
 // the Dashboard if they have it, otherwise their first tab. /account always works, so

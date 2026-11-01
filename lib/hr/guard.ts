@@ -38,14 +38,14 @@ export async function requireHRContext(): Promise<HRContext> {
 // For pages only HR admins and owners may open.
 export async function requireHRAdmin(): Promise<HRContext> {
   const ctx = await requireHRContext()
-  if (!isHR(ctx.viewer)) redirect('/me')
+  if (!isHR(ctx.viewer)) redirect('/clock')
   return ctx
 }
 
 // For pages supervisors, HR and owners may open.
 export async function requireManager(): Promise<HRContext> {
   const ctx = await requireHRContext()
-  if (!isHR(ctx.viewer) && teamOf(ctx.viewer, ctx.people).size === 0) redirect('/me')
+  if (!isHR(ctx.viewer) && teamOf(ctx.viewer, ctx.people).size === 0) redirect('/clock')
   return ctx
 }
 

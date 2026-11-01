@@ -70,7 +70,20 @@ function readPurchases(sheet, month) {
 }
 
 // Stock sheets: one item per row, under a section heading with nothing else on its line.
-const COL = { volume: 2, uom: 3, price: 4, openQty: 6, openAmt: 7, buyQty: 39, buyAmt: 40, closeQty: 41, closeAmt: 42 }
+// Columns H to AL are days 1 to 31 of what came in, adding up to TOTAL PURCHASES.
+const COL = { volume: 2, uom: 3, price: 4, openQty: 6, openAmt: 7, day1: 8, buyQty: 39, buyAmt: 40, closeQty: 41, closeAmt: 42 }
+function readDays(row, month, price) {
+  const days = []
+  for (let col = COL.day1; col < COL.buyQty; col++) {
+    const qty = num(value(row.getCell(col).value))
+    if (!qty) continue
+    const stock_date = `${month}-${String(col - COL.day1 + 1).padStart(2, '0')}`
+    if (Number.isNaN(Date.parse(stock_date)) || new Date(stock_date).toISOString().slice(0, 7) !== month) throw new Error(`${month}: an amount sits on day ${col - COL.day1 + 1}, which doesn't exist`)
+    days.push({ stock_date, qty, amount: round(qty * price) })
+  }
+  return days
+}
+
 function readStock(sheet, month) {
   const rows = []
   let area = ''
@@ -106,6 +119,7 @@ function readStock(sheet, month) {
       opening_qty: openQty, opening_amount: round(openAmt),
       bought_qty: num(value(row.getCell(COL.buyQty).value)), bought_amount: round(buyAmt),
       closing_qty: closeQty, closing_amount: round(closeAmt),
+      days: readDays(row, month, num(value(row.getCell(COL.price).value))),
     })
   })
   return { rows, total }
@@ -146,8 +160,15 @@ for (const m of months) {
   console.log(`${m.month} ${m.ok ? 'OK ' : 'BAD'} supplier purchases ${buy} (sheet ${m.purchases.sheetTotal}), ${m.purchases.rows.length} rows | stock ${m.stock.rows.length} items, opening ${open} (${t?.opening}), bought ${bought} (${t?.bought}), closing ${close} (${t?.closing})`)
 }
 
-if (flag !== '--write') {
-  console.log(`\nChecked only. ${bad} month(s) failed. Add --write to save.`)
+for (const m of months) {
+  const qty = m.stock.rows.reduce((s, r) => s + r.days.reduce((d, x) => d + x.qty, 0), 0)
+  const sheetQty = m.stock.rows.reduce((s, r) => s + r.bought_qty, 0)
+  const amount = sum(m.stock.rows.flatMap(r => r.days), 'amount')
+  console.log(`${m.month} daily: qty ${round(qty)} (sheet ${round(sheetQty)}), amount ${amount} (sheet ${sum(m.stock.rows, 'bought_amount')})`)
+}
+
+if (flag !== '--write' && flag !== '--daily') {
+  console.log(`\nChecked only. ${bad} month(s) failed. Add --write to save, or --daily for the daily rows alone.`)
   process.exit(0)
 }
 
@@ -157,9 +178,13 @@ for (const m of months) {
   if (!m.ok) { console.log(`Not saved: ${m.month}`); continue }
   const [y, mo] = m.month.split('-').map(Number)
   const last = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10)
-  check(await db.from('purchases').delete().gte('purchase_date', `${m.month}-01`).lte('purchase_date', last))
-  check(await db.from('purchases').insert(m.purchases.rows))
-  check(await db.from('stock_counts').delete().eq('month', m.month))
-  check(await db.from('stock_counts').insert(m.stock.rows.map(({ sheet_row, ...row }) => row)))
+  if (flag === '--write') {
+    check(await db.from('purchases').delete().gte('purchase_date', `${m.month}-01`).lte('purchase_date', last))
+    check(await db.from('purchases').insert(m.purchases.rows))
+    check(await db.from('stock_counts').delete().eq('month', m.month))
+    check(await db.from('stock_counts').insert(m.stock.rows.map(({ sheet_row, days, ...row }) => row)))
+  }
+  check(await db.from('stock_daily').delete().gte('stock_date', `${m.month}-01`).lte('stock_date', last))
+  check(await db.from('stock_daily').insert(m.stock.rows.flatMap(r => r.days.map(d => ({ ...d, item: r.item })))))
   console.log(`Saved ${m.month}`)
 }

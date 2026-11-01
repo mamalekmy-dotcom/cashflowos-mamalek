@@ -358,6 +358,16 @@ create table if not exists stock_counts (
 );
 create index if not exists stock_counts_month_idx on stock_counts (month);
 
+-- What came in each day, item by item, from the Stock workbook's day columns.
+create table if not exists stock_daily (
+  id         bigint generated always as identity primary key,
+  stock_date date    not null,
+  item       text    not null,
+  qty        numeric not null,
+  amount     numeric not null
+);
+create index if not exists stock_daily_date_idx on stock_daily (stock_date);
+
 -- The outlet's item list, by area and category. Stock imports never touch it.
 create table if not exists stock_items (
   id         bigint generated always as identity primary key,
@@ -433,6 +443,7 @@ alter table stock_counts  enable row level security;
 alter table daily_reports enable row level security;
 alter table daily_purchases enable row level security;
 alter table stock_items   enable row level security;
+alter table stock_daily   enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

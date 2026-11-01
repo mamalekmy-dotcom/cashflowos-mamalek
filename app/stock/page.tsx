@@ -19,11 +19,12 @@ type Count = {
   closing_amount: number
 }
 type Item = { id: number; area: string; section: string; name: string; uom: string | null; unit_price: number; added_by: number | null; aliases: string[] | null }
-type Row = { key: string; id?: number; name: string; uom: string | null; price: number; count?: Count; removable: boolean }
+type Daily = { stock_date: string; item: string; qty: number; amount: number }
+type Row = { key: string; id?: number; name: string; uom: string | null; price: number; count?: Count; came?: Daily; removable: boolean }
 
-// The item list, grouped the way the outlet thinks about it, with each item's count for
-// the month beside it. Stock is only counted monthly, so a day shows its month's count.
-// A counted item missing from the list still shows, so the totals always add up.
+// The item list, grouped the way the outlet thinks about it. A month shows each item's
+// month-end count. A day shows what came in that day, the only daily figure the workbook
+// keeps. An item missing from the list still shows, so the totals always add up.
 export default async function Stock({ searchParams }: { searchParams: Promise<{ month?: string; day?: string }> }) {
   const { month: askedMonth, day: askedDay } = await searchParams
   const day = /^\d{4}-\d{2}-\d{2}$/.test(askedDay ?? '') ? (askedDay as string) : ''
@@ -39,12 +40,16 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
   }
   const monthName = new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
-  const [{ data: list }, { data: counted }] = await Promise.all([
+  const [{ data: list }, { data: counted }, { data: daily }] = await Promise.all([
     supabase.from('stock_items').select('id, area, section, name, uom, unit_price, added_by, aliases').order('sort_order').order('id'),
     supabase.from('stock_counts').select('item, uom, unit_price, closing_qty, opening_amount, bought_amount, closing_amount').eq('month', month).order('id'),
+    day
+      ? supabase.from('stock_daily').select('stock_date, item, qty, amount').gte('stock_date', `${month}-01`).lte('stock_date', day)
+      : Promise.resolve({ data: [] }),
   ])
   const items = (list ?? []) as Item[]
   const counts = (counted ?? []) as Count[]
+  const days = (daily ?? []) as Daily[]
 
   // The workbook's spelling changed during the year, so old names point at today's item.
   const aliases = new Map(items.flatMap(i => (i.aliases ?? []).map(a => [keyOf(a), keyOf(i.name)] as const)))
@@ -58,6 +63,13 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
       closing_amount: Number(seen.closing_amount) + Number(c.closing_amount),
     } : c)
   }
+  const nameKey = (name: string) => aliases.get(keyOf(name)) ?? keyOf(name)
+  const cameIn = new Map<string, Daily>()
+  for (const d of days.filter(x => x.stock_date === day)) {
+    const key = nameKey(d.item)
+    const seen = cameIn.get(key)
+    cameIn.set(key, seen ? { ...seen, qty: Number(seen.qty) + Number(d.qty), amount: Number(seen.amount) + Number(d.amount) } : d)
+  }
 
   const groups = new Map<string, { area: string; section: string; rows: Row[] }>()
   const groupFor = (area: string, section: string) => {
@@ -68,19 +80,25 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
   for (const i of items) {
     const key = keyOf(i.name)
     groupFor(i.area, i.section).rows.push({
-      key, id: i.id, name: i.name, uom: i.uom, price: Number(i.unit_price), count: byName.get(key), removable: i.added_by !== null,
+      key, id: i.id, name: i.name, uom: i.uom, price: Number(i.unit_price), count: byName.get(key), came: cameIn.get(key), removable: i.added_by !== null,
     })
   }
   const known = new Set(items.map(i => keyOf(i.name)))
   for (const [key, c] of byName) {
     if (known.has(key)) continue
-    groupFor('OTHER', 'NOT ON YOUR LIST').rows.push({ key, name: c.item, uom: c.uom, price: Number(c.unit_price), count: c, removable: false })
+    groupFor('OTHER', 'NOT ON YOUR LIST').rows.push({ key, name: c.item, uom: c.uom, price: Number(c.unit_price), count: c, came: cameIn.get(key), removable: false })
   }
 
-  const sections = [...groups.values()]
-  const places = sections.filter(s => s.area !== 'OTHER').map(({ area, section }) => ({ area, section }))
+  const allSections = [...groups.values()]
+  const places = allSections.filter(s => s.area !== 'OTHER').map(({ area, section }) => ({ area, section }))
+  // On a day, only what came in that day. Empty categories drop away.
+  const sections = day
+    ? allSections.map(s => ({ ...s, rows: s.rows.filter(r => r.came) })).filter(s => s.rows.length)
+    : allSections
   const areas = [...new Set(sections.map(s => s.area))]
   const add = (key: 'opening_amount' | 'bought_amount' | 'closing_amount') => counts.reduce((sum, c) => sum + Number(c[key]), 0)
+  const cameTotal = [...cameIn.values()].reduce((sum, d) => sum + Number(d.amount), 0)
+  const monthToDate = days.reduce((sum, d) => sum + Number(d.amount), 0)
   const opening = add('opening_amount')
   const closing = add('closing_amount')
   const isCounted = counts.some(c => Number(c.closing_qty) > 0) && closing > opening / 2
@@ -97,41 +115,54 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
       </div>
 
       <StockFilter month={month} day={day} />
-      {day ? <p className="cap">Stock is counted once a month, so {day} shows the {monthName} count.</p> : null}
+      {day ? <p className="cap">What came in on {day}. <Link href={`/stock?month=${month}`}>Back to the {monthName} count</Link></p> : null}
 
-      <div className="grid">
-        <Stat label="Opening stock" value={rm(opening)} />
-        <Stat label="Bought" value={rm(add('bought_amount'))} />
-        <Stat label="Closing stock" value={isCounted ? rm(closing) : '—'} />
-        <Stat label="Items counted" value={counts.length} />
-      </div>
+      {day ? (
+        <div className="grid">
+          <Stat label={`Came in on ${day}`} value={rm(cameTotal)} />
+          <Stat label="Items that day" value={cameIn.size} />
+          <Stat label="Month so far" value={rm(monthToDate)} />
+          <Stat label="Opening stock" value={rm(opening)} />
+        </div>
+      ) : (
+        <div className="grid">
+          <Stat label="Opening stock" value={rm(opening)} />
+          <Stat label="Bought" value={rm(add('bought_amount'))} />
+          <Stat label="Closing stock" value={isCounted ? rm(closing) : '—'} />
+          <Stat label="Items counted" value={counts.length} />
+        </div>
+      )}
 
-      {!isCounted ? (
+      {!day && !isCounted ? (
         <p className="login-error" style={{ marginBottom: 16 }}>{monthName} hasn&apos;t been counted yet, so there&apos;s no closing stock.</p>
       ) : null}
 
       <AddItem places={places} />
 
+      {day && !areas.length ? <p className="cap" style={{ marginTop: 20 }}>Nothing came in on {day}.</p> : null}
+
       {areas.map(area => (
         <div key={area} style={{ marginTop: 20 }}>
           <p className="rowlabel">{area}</p>
           {sections.filter(s => s.area === area).map(group => {
-            const total = group.rows.reduce((sum, r) => sum + Number(r.count?.closing_amount ?? 0), 0)
+            const total = group.rows.reduce((sum, r) => sum + Number((day ? r.came?.amount : r.count?.closing_amount) ?? 0), 0)
+            const shown = (r: Row) => (day ? r.came?.qty : r.count?.closing_qty)
+            const money = (r: Row) => (day ? r.came?.amount : r.count?.closing_amount)
             return (
-              <details className="admin-card" key={group.section}>
+              <details className="admin-card" key={group.section} open={!!day}>
                 <summary style={{ cursor: 'pointer' }}>
                   <strong>{group.section}</strong> <span className="cap figure">· {group.rows.length} items · {rm(total)}</span>
                 </summary>
                 <table className="tbl" style={{ marginTop: 12 }}>
-                  <thead><tr><th>Item</th><th>Unit</th><th>Unit price</th><th>Closing qty</th><th>Amount</th><th></th></tr></thead>
+                  <thead><tr><th>Item</th><th>Unit</th><th>Unit price</th><th>{day ? 'Came in' : 'Closing qty'}</th><th>Amount</th><th></th></tr></thead>
                   <tbody>
                     {group.rows.map(r => (
                       <tr key={r.key}>
                         <td data-label="Item">{r.name}</td>
                         <td data-label="Unit">{r.count?.uom ?? r.uom ?? ''}</td>
                         <td data-label="Amount">{rm(Number(r.count?.unit_price ?? r.price))}</td>
-                        <td data-label="Closing qty">{r.count ? Number(r.count.closing_qty).toLocaleString('en-MY') : '—'}</td>
-                        <td data-label="Amount">{r.count ? rm(Number(r.count.closing_amount)) : '—'}</td>
+                        <td data-label={day ? 'Came in' : 'Closing qty'}>{shown(r) != null ? Number(shown(r)).toLocaleString('en-MY') : '—'}</td>
+                        <td data-label="Amount">{money(r) != null ? rm(Number(money(r))) : '—'}</td>
                         <td>{r.removable && r.id ? <RemoveItem id={r.id} /> : null}</td>
                       </tr>
                     ))}

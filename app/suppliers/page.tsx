@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { rm, todayISO } from '@/lib/records'
+import Stat from '@/app/_components/Stat'
+import SupplierFilter from './SupplierFilter'
 import { AddProduct, AddSupplier } from './SupplierForms'
 
 export const dynamic = 'force-dynamic'
@@ -24,23 +26,45 @@ function orderText(name: string, products: Product[]): string {
 }
 
 // A year runs past Supabase's 1,000-row reply, so read it a page at a time.
-async function purchasesSince(from: string): Promise<{ supplier: string; amount: number }[]> {
+async function purchasesBetween(from: string, to: string): Promise<{ supplier: string; amount: number }[]> {
   const rows: { supplier: string; amount: number }[] = []
   for (let page = 0; ; page++) {
-    const { data } = await supabase.from('purchases').select('supplier, amount').gte('purchase_date', from)
+    const { data } = await supabase.from('purchases').select('supplier, amount').gte('purchase_date', from).lte('purchase_date', to)
       .order('id').range(page * PAGE, page * PAGE + PAGE - 1)
     rows.push(...(data ?? []))
     if ((data ?? []).length < PAGE) return rows
   }
 }
 
-export default async function Suppliers() {
+const monthName = (month: string) =>
+  new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+
+function lastDayOf(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+}
+
+// A day, a month or the whole year. With nothing picked it opens on the latest month
+// that has purchases, because the new month is empty until Stock 2026 is reloaded.
+async function periodFor(search: { month?: string; day?: string; all?: string }, year: string) {
+  if (search.all) return { from: `${year}-01-01`, to: `${year}-12-31`, month: '', day: '', label: `the whole of ${year}` }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(search.day ?? '')) {
+    const day = search.day as string
+    return { from: day, to: day, month: day.slice(0, 7), day, label: day }
+  }
+  const { data } = await supabase.from('purchases').select('purchase_date').order('purchase_date', { ascending: false }).limit(1)
+  const month = /^\d{4}-\d{2}$/.test(search.month ?? '') ? (search.month as string) : String(data?.[0]?.purchase_date ?? todayISO()).slice(0, 7)
+  return { from: `${month}-01`, to: lastDayOf(month), month, day: '', label: monthName(month) }
+}
+
+export default async function Suppliers({ searchParams }: { searchParams: Promise<{ month?: string; day?: string; all?: string }> }) {
   const year = todayISO().slice(0, 4)
+  const period = await periodFor(await searchParams, year)
   const [{ data: suppliers }, { data: products }, { data: docs }, bought] = await Promise.all([
     supabase.from('suppliers').select('id, name, phone').order('name'),
     supabase.from('supplier_products').select('id, supplier_id, name, unit, price').order('name'),
     supabase.from('documents').select('supplier_id, amount').eq('status', 'accepted'),
-    purchasesSince(`${year}-01-01`),
+    purchasesBetween(period.from, period.to),
   ])
   const list = (suppliers ?? []) as Supplier[]
   const items = (products ?? []) as Product[]
@@ -52,13 +76,21 @@ export default async function Suppliers() {
     totals.set(p.supplier, { amount: t.amount + Number(p.amount), orders: t.orders + 1 })
   }
   const spend = [...totals].sort((a, b) => b[1].amount - a[1].amount)
+  const totalSpend = spend.reduce((sum, [, t]) => sum + t.amount, 0)
 
   return (
     <>
       <h1 className="ph">Suppliers</h1>
-      <p className="cap">{spend.length} suppliers bought from in {year} · {list.length} with contacts · {items.length} products · <Link href="/stock">Stock</Link></p>
+      <p className="cap">{list.length} with contacts · {items.length} products · <Link href="/stock">Stock</Link></p>
 
-      <p className="rowlabel">Spend in {year}, from Stock 2026</p>
+      <SupplierFilter month={period.month} day={period.day} year={year} />
+
+      <div className="grid">
+        <Stat label="Supplier spend" value={rm(totalSpend)} />
+        <Stat label="Suppliers used" value={spend.length} />
+      </div>
+
+      <p className="rowlabel">Spend for {period.label}, from Stock 2026</p>
       {spend.length ? (
         <table className="tbl" style={{ marginBottom: 24 }}>
           <thead><tr><th>Supplier</th><th>Lines</th><th>Amount</th></tr></thead>
@@ -72,7 +104,7 @@ export default async function Suppliers() {
             ))}
           </tbody>
         </table>
-      ) : <p className="cap">No purchases this year.</p>}
+      ) : <p className="cap">No purchases for {period.label}.</p>}
 
       <p className="rowlabel">Contacts and order lists</p>
       <AddSupplier />

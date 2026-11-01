@@ -62,7 +62,7 @@ export default async function Stock({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <h1 className="ph">Stock</h1>
-      <p className="cap">Purchases and month-end count from Stock 2026.</p>
+      <p className="cap">Purchases and month-end count from Stock 2026 · <Link href="/suppliers">Suppliers</Link></p>
 
       <div className="pulse-head">
         <Link className="btn ghost" href={`/stock?month=${shift(-1)}`} aria-label="Previous month">‹</Link>

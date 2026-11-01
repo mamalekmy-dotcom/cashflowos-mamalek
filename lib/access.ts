@@ -67,9 +67,17 @@ export function accessLevel(user: AccessUser, path: string): Level | null {
   return ROLE_ACCESS[user.role as keyof typeof ROLE_ACCESS]?.[tab] ?? null
 }
 
-// Where someone lands after login: the Dashboard if they have it, otherwise their
-// first tab. /account always works, so nobody ends up on a dead page.
+// Links for owners only. The HR pages stay open to supervisors through the HR tab, so
+// this hides the shortcut from the menu rather than blocking the page.
+const OWNER_LINKS = ['/hr/leave', '/hr/people']
+export const showsTab = (user: AccessUser, href: string) =>
+  !!accessLevel(user, href) && (user.role === 'owner' || !OWNER_LINKS.includes(href))
+
+// Where someone lands after login: staff go straight to clock in, everyone else to
+// the Dashboard if they have it, otherwise their first tab. /account always works, so
+// nobody ends up on a dead page.
 export function homeFor(user: AccessUser): string {
+  if (user.role === 'staff') return '/clock'
   const first = GRANTABLE_TABS.find(t => accessLevel(user, t.href))
   return first ? first.href : '/account'
 }

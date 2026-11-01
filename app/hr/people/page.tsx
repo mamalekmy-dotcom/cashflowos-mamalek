@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import HRTabs from '../HRTabs'
-import { PersonEditor } from '../HRControls'
+import { AddStaff, PersonEditor } from '../HRControls'
 import { requireManager, visiblePeople } from '@/lib/hr/guard'
 import { isHR } from '@/lib/hr/rules'
+import { todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
   const hr = isHR(ctx.viewer)
   const { add, left } = await searchParams
   const [{ data }, { data: users }] = await Promise.all([
-    supabase.from('hr_people').select('id, full_name, preferred_name, department, position, employment_status, join_date, manager_id, is_demo')
+    supabase.from('hr_people').select('id, staff_no, full_name, preferred_name, department, position, employment_status, join_date, manager_id, is_demo')
       .in('id', visiblePeople(ctx)).order('full_name'),
     hr ? supabase.from('app_users').select('id, name, email').eq('active', true).order('name') : Promise.resolve({ data: [] }),
   ])
@@ -30,20 +31,23 @@ export default async function People({ searchParams }: { searchParams: Promise<{
       <p className="cap">{people.length} {left ? 'including leavers' : 'current'} · <Link href={left ? '/hr/people' : '/hr/people?left=1'}>{left ? 'Hide leavers' : 'Show leavers'}</Link></p>
       <HRTabs active="/hr/people" hr={hr} />
 
+      {ctx.viewer.appRole === 'owner' ? <AddStaff today={todayISO()} /> : null}
+
       {hr ? (add
         ? <PersonEditor
             initial={{ full_name: '', preferred_name: '', department: '', position: '', career_level: '', manager_id: '', user_id: '', join_date: '', employment_status: 'probation', probation_end: '', next_review_date: '', phone: '', emergency_contacts: '' }}
             managers={all.map(p => ({ value: String(p.id), label: p.full_name }))}
             logins={(users ?? []).map(u => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
           />
-        : <p><Link className="btn" href="/hr/people?add=1">Add a staff profile</Link></p>) : null}
+        : <p><Link className="btn ghost" href="/hr/people?add=1">Add a profile without a login</Link></p>) : null}
 
       {people.length ? (
         <table className="tbl">
-          <thead><tr><th>Name</th><th>Dept</th><th>Position</th><th>Status</th><th>Reports to</th></tr></thead>
+          <thead><tr><th>Staff ID</th><th>Name</th><th>Dept</th><th>Position</th><th>Status</th><th>Reports to</th></tr></thead>
           <tbody>
             {people.map(p => (
               <tr key={p.id}>
+                <td data-label="Staff ID">{p.staff_no ?? ''}</td>
                 <td data-label="Name"><Link href={`/hr/people/${p.id}`}>{p.preferred_name || p.full_name}</Link>{p.is_demo ? ' (demo)' : ''}</td>
                 <td data-label="Dept">{p.department ?? ''}</td>
                 <td data-label="Position">{p.position ?? ''}</td>

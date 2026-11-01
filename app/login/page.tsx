@@ -26,7 +26,7 @@ export default function Login() {
         window.location.href = body.home || '/'
         return
       }
-      setError("That email or password didn't match. Try again.")
+      setError("That staff ID, email or password didn't match. Try again.")
     } catch {
       setError('Something went wrong reaching the server. Check your connection and try again.')
     } finally {
@@ -43,9 +43,10 @@ export default function Login() {
         <h1 className="ph" style={{ fontSize: 18, marginBottom: 16 }}>Log in</h1>
         <input
           className="login-input"
-          type="email"
-          autoComplete="email"
-          placeholder="Email"
+          type="text"
+          autoCapitalize="none"
+          autoComplete="username"
+          placeholder="Staff ID or email"
           value={email}
           onChange={e => setEmail(e.target.value)}
           autoFocus

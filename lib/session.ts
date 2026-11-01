@@ -78,6 +78,16 @@ export async function userByEmail(email: string): Promise<AppUser | null> {
   return (data as AppUser | null) ?? null
 }
 
+// Staff log in with their ID (ML001). Supabase Auth only knows emails, so swap it first.
+export async function emailForStaffId(staffNo: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('hr_people')
+    .select('app_users(email)')
+    .eq('staff_no', staffNo.trim().toUpperCase())
+    .maybeSingle()
+  return (data?.app_users as unknown as { email: string } | null)?.email ?? null
+}
+
 // ---- Telegram: the same accounts decide who the bot answers. ----
 
 export async function userByTelegramId(id: unknown): Promise<AppUser | null> {

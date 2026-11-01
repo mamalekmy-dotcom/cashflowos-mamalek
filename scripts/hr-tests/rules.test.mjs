@@ -2,11 +2,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  leaveDays, requestProblem, balances, teamOf, canSeePerson, canDecideLeave, canSeeRestricted, isHR,
+  leaveDays, requestProblem, balances, teamOf, canSeePerson, canDecideLeave, canSeeRestricted, isHR, nextStaffNo,
 } from '../../lib/hr/rules.ts'
 
 const TODAY = '2026-11-01'
 const ok = { startPart: 'full', endPart: 'full', allowHalfDay: true }
+
+test('staff IDs: start at ML001, follow the highest, ignore anything else', () => {
+  assert.equal(nextStaffNo([]), 'ML001')
+  assert.equal(nextStaffNo(['ML001', 'ML009', 'ML003']), 'ML010')
+  assert.equal(nextStaffNo([null, 'OLD7']), 'ML001')
+  assert.equal(nextStaffNo(['ML999']), 'ML1000')
+})
 
 test('leave days: full days, half days and one-day halves', () => {
   assert.equal(leaveDays('2026-12-01', '2026-12-03', 'full', 'full'), 3)

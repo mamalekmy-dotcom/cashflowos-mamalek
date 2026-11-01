@@ -61,6 +61,7 @@ export default async function Clock() {
               return (
                 <tr key={day}>
                   <td data-label="Day">{day}</td>
+                  <td data-label="Times">{list.map(p => `${p.kind === 'in' ? 'In' : 'Out'} ${timeOf(p.punched_at)}`).join(' · ')}</td>
                   <td data-label="Hours">{hours(minutes)}</td>
                   <td data-label="Status">{missingOut ? <span className="pill overdue">missing clock-out</span> : null}</td>
                 </tr>

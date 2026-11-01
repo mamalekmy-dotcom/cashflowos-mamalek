@@ -1,10 +1,12 @@
 'use server'
 
+import { randomBytes } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { getCurrentUser } from '@/lib/auth'
 import { todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
 import { audit, countRules, mayDecideLeave, requireHRContext, type HRContext } from '@/lib/hr/guard'
-import { balances, isHR, leaveDays, requestProblem, type Capability, type Part } from '@/lib/hr/rules'
+import { POSITIONS, balances, isHR, leaveDays, nextStaffNo, requestProblem, type Capability, type Part } from '@/lib/hr/rules'
 
 // Every action re-checks who is asking. A page being reachable proves nothing.
 
@@ -132,6 +134,57 @@ export type PersonForm = {
   probation_end: string; next_review_date: string; phone: string; emergency_contacts: string
 }
 
+async function newStaffNo(): Promise<string> {
+  const { data } = await supabase.from('hr_people').select('staff_no').not('staff_no', 'is', null)
+  return nextStaffNo((data ?? []).map(p => p.staff_no))
+}
+
+// One step for a new hire: their login, their profile and their staff ID. Staff log in
+// with the ID, so the email is optional. Without one, the login uses a +ML001 copy of
+// the owner's own address, which keeps it unique and sends any reset mail to the owner.
+export async function createStaff(input: {
+  fullName: string; position: string; phone: string; email: string; joinDate: string
+}): Promise<Result & { staffNo?: string; tempPassword?: string }> {
+  const ctx = await requireHRContext()
+  const owner = await getCurrentUser()
+  if (ctx.viewer.appRole !== 'owner' || !owner) return fail('Only an owner can create a staff login.')
+  const name = clean(input.fullName)
+  const position = POSITIONS.find(p => p.label === input.position)
+  if (!name) return fail('Enter the full name.')
+  if (!position) return fail('Pick a position.')
+  if (input.joinDate && !isDate(input.joinDate)) return fail('Check the join date.')
+  const typed = clean(input.email).toLowerCase()
+  if (typed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typed)) return fail('That email doesn’t look right.')
+
+  const staffNo = await newStaffNo()
+  const [local, domain] = owner.email.split('@')
+  const email = typed || `${local}+${staffNo.toLowerCase()}@${domain}`
+  const password = randomBytes(9).toString('base64url')
+
+  const { data: auth, error: authError } = await supabase.auth.admin.createUser({ email, password, email_confirm: true })
+  if (authError || !auth.user) return fail(authError?.message ?? 'Could not create the login.')
+  const undoAuth = () => supabase.auth.admin.deleteUser(auth.user.id)
+
+  const { data: user, error: userError } = await supabase.from('app_users')
+    .insert({ auth_id: auth.user.id, email, name, role: 'staff' }).select('id').single()
+  if (userError) {
+    await undoAuth()
+    return fail(userError.message)
+  }
+  const { data: person, error: personError } = await supabase.from('hr_people').insert({
+    user_id: user.id, staff_no: staffNo, full_name: name, department: position.department, position: position.label,
+    phone: orNull(input.phone), join_date: orNull(input.joinDate) ?? todayISO(),
+  }).select('id').single()
+  if (personError) {
+    await supabase.from('app_users').delete().eq('id', user.id)
+    await undoAuth()
+    return fail(personError.message)
+  }
+  await audit(ctx, 'create', 'hr_people', person.id, { staffNo, position: position.label })
+  refresh()
+  return { ok: true, message: `${name} is set up.`, staffNo, tempPassword: password }
+}
+
 export async function savePerson(f: PersonForm): Promise<Result & { id?: number }> {
   const ctx = await hrOnly()
   if (!clean(f.full_name)) return fail('Enter the full name.')
@@ -149,7 +202,7 @@ export async function savePerson(f: PersonForm): Promise<Result & { id?: number 
   if (f.id && row.manager_id === f.id) return fail('Someone can’t report to themselves.')
   const q = f.id
     ? supabase.from('hr_people').update(row).eq('id', f.id).select('id').single()
-    : supabase.from('hr_people').insert(row).select('id').single()
+    : supabase.from('hr_people').insert({ ...row, staff_no: await newStaffNo() }).select('id').single()
   const { data, error } = await q
   if (error) return fail(error.code === '23505' ? 'That login already belongs to another profile.' : error.message)
   await audit(ctx, f.id ? 'update' : 'create', 'hr_people', data.id, { fields: Object.keys(row) })

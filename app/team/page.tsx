@@ -172,6 +172,7 @@ export default async function TalentHQ({ searchParams }: { searchParams: Promise
             {label}{key === 'ot' && count ? ` · ${count}` : ''}
           </Link>
         ))}
+        <Link href="/team/history" className="btn ghost">Clock history</Link>
       </div>
       {tab === 'ot' ? <Overtime /> : null}
       {tab === 'report' ? <Report people={people} month={/^\d{4}-\d{2}$/.test(month ?? '') ? (month as string) : today.slice(0, 7)} /> : null}

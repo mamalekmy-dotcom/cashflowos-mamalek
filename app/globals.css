@@ -97,6 +97,7 @@ code {
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-13); padding: 16px; }
 .stat .l { color: var(--ink-soft); font-size: 13px; margin: 0 0 6px; }
 .stat .v { font-size: 26px; font-weight: 700; margin: 0; color: var(--ink); }
+.stat .s { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0; }
 .stat.yes { border-color: var(--clay); background: var(--clay-tint); }
 .stat.yes .v { color: var(--clay-deep); }
 
@@ -296,6 +297,7 @@ code {
 .pulse-input { padding: 6px 8px; font-size: 14px; }
 .eye-toggle { position: fixed; top: 12px; right: 14px; z-index: 30; display: grid; place-items: center; width: 38px; height: 38px; background: var(--card); color: var(--ink); border: 1px solid var(--line-2); border-radius: 50%; cursor: pointer; }
 html[data-figures="hidden"] .stat .v,
+html[data-figures="hidden"] .stat .s,
 html[data-figures="hidden"] .pulse-amount,
 html[data-figures="hidden"] .figure,
 html[data-figures="hidden"] .tbl td[data-label="Amount"],

@@ -1,10 +1,10 @@
 'use client'
 import { useState, useTransition } from 'react'
 import {
-  addGrant, addLedgerLine, applyLeave, cancelLeave, decideLeave, removeGrant, removeHoliday,
+  addGrant, addLedgerLine, applyLeave, cancelLeave, createStaff, decideLeave, removeGrant, removeHoliday,
   saveCountRules, saveHoliday, saveLeaveType, savePerson, savePrivate, type PersonForm,
 } from './actions'
-import type { Capability, Part } from '@/lib/hr/rules'
+import { POSITIONS, type Capability, type Part } from '@/lib/hr/rules'
 
 type Opt = { value: string; label: string }
 const gap = { marginTop: 10 }
@@ -125,10 +125,60 @@ export function LedgerForm({ personId, types, year }: { personId: number; types:
 
 // ---------------------------------------------------------------- people
 export const DEPARTMENTS = ['FOH', 'BOH', 'Management']
+const POSITION_OPTS: Opt[] = POSITIONS.map(p => ({ value: p.label, label: `${p.label} (${p.department})` }))
+
+export function AddStaff({ today }: { today: string }) {
+  const blank = { fullName: '', position: '', phone: '', email: '', joinDate: today }
+  const [f, setF] = useState(blank)
+  const [made, setMade] = useState<{ name: string; staffNo: string; tempPassword: string } | null>(null)
+  const set = (k: keyof typeof blank) => (v: string) => setF(s => ({ ...s, [k]: v }))
+  const { message, pending, go } = useAction()
+  return (
+    <>
+      {made ? (
+        <div className="admin-card" role="status">
+          <p className="rowlabel" style={{ margin: 0 }}>{made.name} is set up</p>
+          <p className="cap" style={{ margin: '8px 0 4px' }}>
+            Send these to them privately. The password shows only once, and they&apos;ll choose their own at first login.
+          </p>
+          <p className="cap" style={{ margin: 0 }}>Staff ID: <code>{made.staffNo}</code></p>
+          <p className="cap" style={{ margin: '4px 0 0' }}>Temporary password: <code>{made.tempPassword}</code></p>
+        </div>
+      ) : null}
+      <form className="admin-card" onSubmit={e => {
+        e.preventDefault()
+        go(async () => {
+          const r = await createStaff(f)
+          if (r.ok && r.staffNo && r.tempPassword) {
+            setMade({ name: f.fullName, staffNo: r.staffNo, tempPassword: r.tempPassword })
+            setF(blank)
+          }
+          return r
+        })
+      }}>
+        <p className="rowlabel">Create a staff ID</p>
+        <Field label="Full name" value={f.fullName} onChange={set('fullName')} />
+        <Select label="Position" value={f.position} onChange={set('position')} options={POSITION_OPTS} blank="Pick one" />
+        <Field label="Phone (optional)" value={f.phone} onChange={set('phone')} />
+        <Field label="Email (optional)" type="email" value={f.email} onChange={set('email')} />
+        <Field label="Joined" type="date" value={f.joinDate} onChange={set('joinDate')} />
+        <Msg text={message} />
+        <button className="btn" type="submit" disabled={pending || !f.fullName || !f.position} style={{ marginTop: 12 }}>
+          {pending ? 'Creating…' : 'Create staff ID'}
+        </button>
+      </form>
+    </>
+  )
+}
 
 export function PersonEditor({ initial, managers, logins }: { initial: PersonForm; managers: Opt[]; logins: Opt[] }) {
   const [f, setF] = useState(initial)
   const set = (k: keyof PersonForm) => (v: string) => setF(s => ({ ...s, [k]: v }))
+  const pickPosition = (position: string) =>
+    setF(s => ({ ...s, position, department: POSITIONS.find(p => p.label === position)?.department ?? s.department }))
+  const positions = POSITIONS.some(p => p.label === f.position) || !f.position
+    ? POSITION_OPTS
+    : [{ value: f.position, label: f.position }, ...POSITION_OPTS]
   const { message, pending, go } = useAction()
   return (
     <form className="admin-card" onSubmit={e => {
@@ -142,8 +192,8 @@ export function PersonEditor({ initial, managers, logins }: { initial: PersonFor
       <p className="rowlabel">{f.id ? 'Profile' : 'New staff profile'}</p>
       <Field label="Full name" value={f.full_name} onChange={set('full_name')} />
       <Field label="Preferred name" value={f.preferred_name} onChange={set('preferred_name')} />
+      <Select label="Position" value={f.position} onChange={pickPosition} options={positions} blank="—" />
       <Select label="Department" value={f.department} onChange={set('department')} options={DEPARTMENTS.map(d => ({ value: d, label: d }))} blank="—" />
-      <Field label="Position" value={f.position} onChange={set('position')} placeholder="e.g. FOH Crew, BOH Supervisor" />
       <Field label="Career level" value={f.career_level} onChange={set('career_level')} />
       <Select label="Reports to" value={f.manager_id} onChange={set('manager_id')} options={managers} blank="Nobody" />
       <Select label="Login" value={f.user_id} onChange={set('user_id')} options={logins} blank="No login yet" />

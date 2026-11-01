@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { accessLevel, type AccessUser } from '@/lib/access'
+import { showsTab, type AccessUser } from '@/lib/access'
 
 // 👉 The desktop sidebar tabs, grouped under micro-cap section labels.
 //    Adding a tab? Add ONE line to the right group here, add the SAME tab to
@@ -31,9 +31,12 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/vault', label: 'Vault' },
   ] },
   { label: 'People', tabs: [
-    { href: '/chat', label: 'Chat' },
+    { href: '/hr/people', label: 'Staff' },
     { href: '/clock', label: 'Clock in' },
+    { href: '/team/history', label: 'Clock history' },
+    { href: '/hr/leave', label: 'Leave approvals' },
     { href: '/team', label: 'Talent HQ' },
+    { href: '/chat', label: 'Chat' },
     { href: '/me', label: 'My HR' },
     { href: '/hr', label: 'HR' },
   ] },
@@ -61,7 +64,7 @@ export const TABS = NAV_GROUPS.flatMap(g => g.tabs)
 export default function Nav({ pendingCount, user }: { pendingCount?: number; user: AccessUser }) {
   const path = usePathname()
   const groups = NAV_GROUPS
-    .map(group => ({ ...group, tabs: group.tabs.filter(t => accessLevel(user, t.href)) }))
+    .map(group => ({ ...group, tabs: group.tabs.filter(t => showsTab(user, t.href)) }))
     .filter(group => group.tabs.length > 0)
   return (
     <nav className="nav">

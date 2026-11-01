@@ -18,9 +18,40 @@ async function proposedCount(): Promise<number> {
   return count ?? 0
 }
 
+// Leave waiting on a decision. Returns 0 if the HR tables aren't there.
+async function leaveWaiting(): Promise<number> {
+  if (!supabaseConfigured) return 0
+  const { count, error } = await supabase
+    .from('hr_leave_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+  if (error) return 0
+  return count ?? 0
+}
+
+// The last month closed in the TMS report. Costs only exist once a month is closed,
+// so this is the last full month, not this one.
+async function latestCosts() {
+  if (!supabaseConfigured) return null
+  const { data } = await supabase
+    .from('monthly_pnl')
+    .select('month, net_sales, cogs, labor, rent')
+    .gt('net_sales', 0)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data
+}
+
 export default async function Dashboard() {
-  const [rows, waiting, sales] = await Promise.all([getRecords(), proposedCount(), latestMonthSales()])
+  const [rows, waiting, sales, leave, costs] = await Promise.all([
+    getRecords(), proposedCount(), latestMonthSales(), leaveWaiting(), latestCosts(),
+  ])
   const funnel = getFunnel(rows)
+  const share = (amount: number) => `${((amount / Number(costs?.net_sales)) * 100).toFixed(1)}%`
+  const costMonth = costs
+    ? new Date(`${costs.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : ''
 
   // ── The Money row ───────────────────────────────────────────────
   const sum = (cat: string, statuses?: string[]) =>
@@ -37,12 +68,24 @@ export default async function Dashboard() {
   return (
     <>
       <h1 className="ph">Dashboard</h1>
-      <p className="cap">The river, the money, and what needs your YES.</p>
+      <p className="cap">Costs, the river, the money, and what needs your YES.</p>
 
       <p className="cap">
         {sales ? `Sales logged up to ${sales.lastDate}. ` : 'No sales logged yet. '}
         <Link href="/pulse">Log sales</Link> · <Link href="/clock">Clock in</Link>
       </p>
+
+      {/* Row 0 — costs as a share of net sales, last closed month */}
+      {costs ? (
+        <>
+          <p className="rowlabel">Costs · {costMonth} · % of net sales</p>
+          <div className="grid">
+            <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} href="/pulse" />
+            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={rm(Number(costs.labor))} href="/pulse" />
+            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={rm(Number(costs.rent))} href="/pulse" />
+          </div>
+        </>
+      ) : null}
 
       {/* Row 1 — the funnel (whole-business river) */}
       <FunnelBar funnel={funnel} />
@@ -56,6 +99,7 @@ export default async function Dashboard() {
         <Stat label="Net" value={rm(net)} />
         <Stat label="Who Owes Me" value={rm(owed)} />
         <Stat label="🙋 Needs your YES" value={waiting} yes={waiting > 0} href="/approvals" />
+        <Stat label="Leave to approve" value={leave} yes={leave > 0} href="/hr/leave" />
       </div>
     </>
   )

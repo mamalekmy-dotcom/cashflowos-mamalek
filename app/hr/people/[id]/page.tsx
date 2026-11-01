@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-const BASIC = 'id, full_name, preferred_name, department, position, career_level, manager_id, join_date, employment_status, probation_end, next_review_date, is_demo'
+const BASIC = 'id, staff_no, full_name, preferred_name, department, position, career_level, manager_id, join_date, employment_status, probation_end, next_review_date, is_demo'
 const CONTACT = 'user_id, phone, emergency_contacts'
 
 // One person. Supervisors get the basics and leave; HR also gets contact details,
@@ -43,7 +43,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
   return (
     <>
       <h1 className="ph">{str(person.preferred_name) || str(person.full_name)}{person.is_demo ? ' (demo)' : ''}</h1>
-      <p className="cap"><Link href="/hr/people">← People</Link></p>
+      <p className="cap"><Link href="/hr/people">← People</Link>{person.staff_no ? ` · Staff ID ${str(person.staff_no)}` : ''}</p>
       <HRTabs active="/hr/people" hr={hr} />
 
       {hr ? (

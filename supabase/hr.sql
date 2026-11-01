@@ -35,6 +35,8 @@ create table if not exists hr_people (
   check (manager_id is null or manager_id <> id)
 );
 create index if not exists hr_people_manager_idx on hr_people (manager_id);
+-- The ID staff log in with, e.g. ML001. Added after release 1, so it's an alter.
+alter table hr_people add column if not exists staff_no text unique;
 
 -- Only HR admins and owners ever read this table. Trainer and supervisor code never
 -- selects it, so there is no join that could leak salary or medical details.

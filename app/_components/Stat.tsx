@@ -6,11 +6,13 @@ import Link from 'next/link'
 export default function Stat({
   label,
   value,
+  sub,
   yes,
   href,
 }: {
   label: string
   value: string | number
+  sub?: string
   yes?: boolean
   href?: string
 }) {
@@ -18,6 +20,7 @@ export default function Stat({
     <div className={`stat${yes ? ' yes' : ''}`}>
       <p className="l">{label}</p>
       <p className="v">{value}</p>
+      {sub ? <p className="s">{sub}</p> : null}
     </div>
   )
   if (href) {

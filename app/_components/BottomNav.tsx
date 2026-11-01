@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import MoreSheet, { type MoreTab } from './MoreSheet'
-import { accessLevel, type AccessUser } from '@/lib/access'
+import { showsTab, type AccessUser } from '@/lib/access'
 
 // 👉 The phone bottom bar (shown ≤768px). Four thumb-size primary tabs + a
 //    "More" button that opens the slide-up sheet with everything else, so all
@@ -20,9 +20,12 @@ const TABS: MoreTab[] = [
   { href: '/tasks', label: 'Tasks', ico: '✅' },
   { href: '/employees', label: 'AI Employees', ico: '🤖' },
   { href: '/vault', label: 'Vault', ico: '🗄️' },
-  { href: '/chat', label: 'Chat', ico: '💬' },
+  { href: '/hr/people', label: 'Staff', ico: '🪪' },
   { href: '/clock', label: 'Clock in', ico: '⏰' },
+  { href: '/team/history', label: 'Clock history', ico: '🕓' },
+  { href: '/hr/leave', label: 'Leave approvals', ico: '🌴' },
   { href: '/team', label: 'Talent HQ', ico: '👥' },
+  { href: '/chat', label: 'Chat', ico: '💬' },
   { href: '/me', label: 'My HR', ico: '🪪' },
   { href: '/hr', label: 'HR', ico: '🧑‍💼' },
   { href: '/suppliers', label: 'Suppliers', ico: '🚚' },
@@ -41,7 +44,7 @@ const BAR_SIZE = 4
 export default function BottomNav({ user }: { user: AccessUser }) {
   const path = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
-  const visible = TABS.filter(t => accessLevel(user, t.href))
+  const visible = TABS.filter(t => showsTab(user, t.href))
   const primary = visible.slice(0, BAR_SIZE)
   const more = visible.slice(BAR_SIZE)
   const moreActive = more.some(t => t.href === path)

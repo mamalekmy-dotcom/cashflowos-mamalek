@@ -11,6 +11,26 @@ export type PendingRow = { leave_type: string; start_date: string; days: number 
 export type CountRules = { skipWeekdays: number[]; skipHolidays: boolean }
 export const DEFAULT_COUNT_RULES: CountRules = { skipWeekdays: [], skipHolidays: false }
 
+// The position choices. Picking one fills in the department.
+export const POSITIONS = [
+  { label: 'Outlet Manager', department: 'Management' },
+  { label: 'FOH Supervisor', department: 'FOH' },
+  { label: 'Cashier', department: 'FOH' },
+  { label: 'Bar Crew', department: 'FOH' },
+  { label: 'FOH Crew', department: 'FOH' },
+  { label: 'Head Chef', department: 'BOH' },
+  { label: 'BOH Supervisor', department: 'BOH' },
+  { label: 'Cook', department: 'BOH' },
+  { label: 'Kitchen Crew', department: 'BOH' },
+  { label: 'Dishwasher', department: 'BOH' },
+]
+
+// The next ID after the highest one in use, so a removed ID is never handed out again.
+export function nextStaffNo(existing: (string | null)[]): string {
+  const numbers = existing.map(s => Number(/^ML(\d+)$/.exec(s ?? '')?.[1] ?? 0))
+  return `ML${String(Math.max(0, ...numbers) + 1).padStart(3, '0')}`
+}
+
 const DAY_MS = 86_400_000
 const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`))
 const dayNumber = (d: string) => Date.parse(`${d}T00:00:00Z`) / DAY_MS

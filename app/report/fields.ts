@@ -13,12 +13,24 @@ export const SALES_FIELDS = [
   { key: 'unpaid_total', label: 'Unpaid total (RM)' },
   { key: 'total_pay_in', label: 'Total pay in (RM)' },
   { key: 'total_pay_out', label: 'Total pay out (RM)' },
-  { key: 'receipt_count', label: 'No of receipt' },
+  { key: 'receipt_count', label: 'No of receipt', isCount: true },
   { key: 'receipt_avg', label: 'Receipt average (RM)' },
-  { key: 'total_pax', label: 'Total pax' },
+  { key: 'total_pax', label: 'Total pax', isCount: true },
   { key: 'avg_per_pax', label: 'Average per pax (RM)' },
 ] as const
 
 export type SalesKey = (typeof SALES_FIELDS)[number]['key']
 export type SalesValues = Record<SalesKey, number>
 export const SALES_COLUMNS = SALES_FIELDS.map(f => f.key).join(', ')
+
+// The dashboard's daily tiles: everything except the three payment boxes.
+export const DAILY_TILES = SALES_FIELDS.filter(f => !['cash', 'qr', 'card'].includes(f.key))
+
+// "▲ 120 (5.2%)" against the day before. The percentage drops out when the day before
+// was zero, since there's nothing to divide by.
+export function changeText(now: number, before: number, show: (n: number) => string): string {
+  const change = now - before
+  if (change === 0) return 'Same as day before'
+  const percent = before ? ` (${Math.abs((change / before) * 100).toFixed(1)}%)` : ''
+  return `${change > 0 ? '▲' : '▼'} ${show(Math.abs(change))}${percent}`
+}

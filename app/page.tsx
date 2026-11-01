@@ -1,6 +1,7 @@
 import { getRecords, isCashReceived, latestMonthSales, rm } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import Stat from '@/app/_components/Stat'
+import { DAILY_TILES, SALES_COLUMNS, changeText, type SalesValues } from '@/app/report/fields'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,9 +55,24 @@ async function keyedSales() {
   return { month, lastDate, total }
 }
 
+const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+
+// The latest report with figures in it, and the report from the calendar day before.
+async function latestReports() {
+  if (!supabaseConfigured) return null
+  const { data } = await supabase.from('daily_reports').select(`report_date, ${SALES_COLUMNS}`)
+    .or('sales_total.gt.0,cash.gt.0,qr.gt.0,card.gt.0')
+    .order('report_date', { ascending: false }).limit(1)
+  const latest = data?.[0] as unknown as (SalesValues & { report_date: string }) | undefined
+  if (!latest) return null
+  const previousDay = dayBefore(latest.report_date)
+  const { data: earlier } = await supabase.from('daily_reports').select(SALES_COLUMNS).eq('report_date', previousDay).maybeSingle()
+  return { day: latest.report_date, latest, previousDay, previous: earlier as unknown as SalesValues | null }
+}
+
 export default async function Dashboard() {
-  const [rows, waiting, pos, keyed, leave, costs] = await Promise.all([
-    getRecords(), proposedCount(), latestMonthSales(), keyedSales(), leaveWaiting(), latestCosts(),
+  const [rows, waiting, pos, keyed, leave, costs, reports] = await Promise.all([
+    getRecords(), proposedCount(), latestMonthSales(), keyedSales(), leaveWaiting(), latestCosts(), latestReports(),
   ])
   // Keyed sales take over from the month they start. Until then the last POS month shows.
   const sales = keyed && (!pos || keyed.month >= pos.month)
@@ -100,6 +116,33 @@ export default async function Dashboard() {
         <Stat label="Pending leave approval" value={leave} yes={leave > 0} href="/hr/leave" />
         <Stat label="Approval" value={waiting} yes={waiting > 0} href="/approvals" />
       </div>
+
+      {/* Row 2 — the latest Daily Report against the day before */}
+      {reports ? (
+        <>
+          <p className="rowlabel">Daily report · {reports.day}, compared with {reports.previousDay}</p>
+          <div className="grid">
+            {DAILY_TILES.map(f => {
+              const show = (n: number) => ('isCount' in f ? n.toLocaleString('en-MY') : rm(n))
+              const now = Number(reports.latest[f.key])
+              return (
+                <Stat
+                  key={f.key}
+                  label={f.label.replace(' (RM)', '')}
+                  value={now < 0 ? `-${show(-now)}` : show(now)}
+                  sub={reports.previous ? changeText(now, Number(reports.previous[f.key]), show) : 'No report the day before'}
+                  href={`/report?day=${reports.day}`}
+                />
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="rowlabel">Daily report</p>
+          <p className="cap">No report saved yet. <a href="/report">Key in today&apos;s report</a></p>
+        </>
+      )}
     </>
   )
 }

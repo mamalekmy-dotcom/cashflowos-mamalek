@@ -31,6 +31,7 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
 // on purpose: only the Owner role reaches the admin panel.
 export const GRANTABLE_TABS = [
   { href: '/', label: 'Dashboard' },
+  { href: '/report', label: 'Daily Report' },
   { href: '/content', label: 'Content' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/approvals', label: 'Approvals' },

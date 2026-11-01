@@ -11,6 +11,7 @@ import { showsTab, type AccessUser } from '@/lib/access'
 export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[] }[] = [
   { label: 'Overview', tabs: [
     { href: '/', label: 'Dashboard' },
+    { href: '/report', label: 'Daily Report' },
   ] },
   { label: 'Work', tabs: [
     { href: '/content', label: 'Content' },

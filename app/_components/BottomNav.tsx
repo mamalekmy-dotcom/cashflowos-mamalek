@@ -10,6 +10,7 @@ import { showsTab, type AccessUser } from '@/lib/access'
 //    10 sections stay reachable on a phone. Keep this in sync with Nav.tsx.
 const TABS: MoreTab[] = [
   { href: '/', label: 'Dashboard', ico: '🏠' },
+  { href: '/report', label: 'Daily Report', ico: '📝' },
   { href: '/approvals', label: 'Approvals', ico: '🙋' },
   { href: '/content', label: 'Content', ico: '📣' },
   { href: '/tasks', label: 'Tasks', ico: '✅' },

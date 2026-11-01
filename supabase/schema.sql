@@ -359,6 +359,30 @@ create table if not exists stock_counts (
 create index if not exists stock_counts_month_idx on stock_counts (month);
 
 -- ------------------------------------------------------------
+-- Daily Report — what the team keys in. Kept apart from daily_sales and purchases,
+-- which the POS upload and the Stock 2026 import replace wholesale.
+-- ------------------------------------------------------------
+create table if not exists daily_reports (
+  report_date date        primary key,
+  cash        numeric     not null default 0,
+  qr          numeric     not null default 0,
+  card        numeric     not null default 0,
+  updated_by  bigint      references app_users(id) on delete set null,
+  updated_at  timestamptz not null default now()
+);
+
+create table if not exists daily_purchases (
+  id            bigint generated always as identity primary key,
+  purchase_date date        not null,
+  supplier      text        not null,
+  amount        numeric     not null check (amount > 0),
+  note          text,
+  created_by    bigint      references app_users(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+create index if not exists daily_purchases_date_idx on daily_purchases (purchase_date);
+
+-- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
 -- nothing — exactly what we want. Never expose these rows via a public route.
@@ -388,6 +412,8 @@ alter table review_events enable row level security;
 alter table monthly_pnl   enable row level security;
 alter table purchases     enable row level security;
 alter table stock_counts  enable row level security;
+alter table daily_reports enable row level security;
+alter table daily_purchases enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

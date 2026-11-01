@@ -3,6 +3,7 @@ import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm } from '@/l
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import FunnelBar from '@/app/_components/FunnelBar'
 import Stat from '@/app/_components/Stat'
+import UploadSales from '@/app/_components/UploadSales'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,7 +73,7 @@ export default async function Dashboard() {
 
       <p className="cap">
         {sales ? `Sales logged up to ${sales.lastDate}. ` : 'No sales logged yet. '}
-        <Link href="/pulse">Log sales</Link> · <Link href="/clock">Clock in</Link>
+        <Link href="/clock">Clock in</Link>
       </p>
 
       {/* Row 0 — costs as a share of net sales, last closed month */}
@@ -80,9 +81,9 @@ export default async function Dashboard() {
         <>
           <p className="rowlabel">Costs · {costMonth} · % of net sales</p>
           <div className="grid">
-            <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} href="/pulse" />
-            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={rm(Number(costs.labor))} href="/pulse" />
-            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={rm(Number(costs.rent))} href="/pulse" />
+            <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} />
+            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={rm(Number(costs.labor))} />
+            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={rm(Number(costs.rent))} />
           </div>
         </>
       ) : null}
@@ -93,7 +94,7 @@ export default async function Dashboard() {
       {/* Row 2 — the money + the 🙋 count */}
       <p className="rowlabel">The Money</p>
       <div className="grid">
-        {sales ? <Stat label={`Sales ${sales.month}`} value={rm(sales.total)} href="/pulse" /> : null}
+        {sales ? <Stat label={`Sales ${sales.month}`} value={rm(sales.total)} /> : null}
         <Stat label="Invoices paid" value={rm(cashIn)} />
         <Stat label="Cash Out" value={rm(cashOut)} />
         <Stat label="Net" value={rm(net)} />
@@ -101,6 +102,8 @@ export default async function Dashboard() {
         <Stat label="🙋 Needs your YES" value={waiting} yes={waiting > 0} href="/approvals" />
         <Stat label="Leave to approve" value={leave} yes={leave > 0} href="/hr/leave" />
       </div>
+
+      <UploadSales />
     </>
   )
 }

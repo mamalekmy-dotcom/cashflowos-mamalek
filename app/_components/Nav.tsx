@@ -12,15 +12,6 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
   { label: 'Overview', tabs: [
     { href: '/', label: 'Dashboard' },
   ] },
-  { label: 'Money', tabs: [
-    { href: '/pulse', label: 'P&L Pulse' },
-    { href: '/cash-in', label: 'Cash In' },
-    { href: '/cash-out', label: 'Cash Out' },
-  ] },
-  { label: 'Pipeline', tabs: [
-    { href: '/leads', label: 'Leads' },
-    { href: '/customers', label: 'Customers' },
-  ] },
   { label: 'Work', tabs: [
     { href: '/content', label: 'Content' },
     { href: '/tasks', label: 'Tasks' },
@@ -47,8 +38,6 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/docs', label: 'Doc Center' },
   ] },
   { label: 'Account', tabs: [
-    { href: '/reviews', label: 'Table QR' },
-    { href: '/memory', label: 'Outlet Memory' },
     { href: '/admin', label: 'Admin' },
     { href: '/account', label: 'My account' },
   ] },

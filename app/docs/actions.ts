@@ -91,7 +91,6 @@ export async function acceptDocument(
     return { ok: false, message: costError.message }
   }
   revalidatePath('/docs')
-  revalidatePath('/pulse')
   revalidatePath('/suppliers')
   return { ok: true, message: 'Accepted and added to costs.' }
 }

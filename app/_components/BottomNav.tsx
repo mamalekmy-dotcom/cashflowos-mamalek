@@ -10,12 +10,7 @@ import { showsTab, type AccessUser } from '@/lib/access'
 //    10 sections stay reachable on a phone. Keep this in sync with Nav.tsx.
 const TABS: MoreTab[] = [
   { href: '/', label: 'Dashboard', ico: '🏠' },
-  { href: '/pulse', label: 'P&L Pulse', ico: '📈' },
-  { href: '/cash-in', label: 'Cash In', ico: '💰' },
-  { href: '/cash-out', label: 'Cash Out', ico: '🧾' },
   { href: '/approvals', label: 'Approvals', ico: '🙋' },
-  { href: '/leads', label: 'Leads', ico: '🧲' },
-  { href: '/customers', label: 'Customers', ico: '🧑‍🤝‍🧑' },
   { href: '/content', label: 'Content', ico: '📣' },
   { href: '/tasks', label: 'Tasks', ico: '✅' },
   { href: '/employees', label: 'AI Employees', ico: '🤖' },
@@ -32,8 +27,6 @@ const TABS: MoreTab[] = [
   { href: '/stock', label: 'Stock', ico: '📦' },
   { href: '/scan', label: 'Scan', ico: '📷' },
   { href: '/docs', label: 'Doc Center', ico: '📁' },
-  { href: '/reviews', label: 'Table QR', ico: '⭐' },
-  { href: '/memory', label: 'Outlet Memory', ico: '🧠' },
   { href: '/admin', label: 'Admin', ico: '🛠️' },
   { href: '/account', label: 'My account', ico: '👤' },
 ]

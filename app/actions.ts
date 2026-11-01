@@ -8,42 +8,6 @@ import { supabase } from '@/lib/supabase'
 
 type Result = { ok: boolean; message: string }
 
-const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d)
-
-export async function logDay(saleDate: string, netSales: number): Promise<Result> {
-  await requireOwner()
-  if (!isDate(saleDate)) return { ok: false, message: 'Pick a day.' }
-  if (!Number.isFinite(netSales) || netSales < 0) return { ok: false, message: 'Enter the sales amount.' }
-  const { error } = await supabase
-    .from('daily_sales')
-    .upsert({ sale_date: saleDate, net_sales: netSales, source: 'manual', updated_at: new Date().toISOString() })
-  if (error) return { ok: false, message: error.message }
-  revalidatePath('/pulse')
-  return { ok: true, message: 'Saved.' }
-}
-
-export async function addCost(input: {
-  date: string
-  category: string
-  amount: number
-  note: string
-}): Promise<Result> {
-  const user = await requireOwner()
-  if (!isDate(input.date)) return { ok: false, message: 'Pick a date.' }
-  if (!['food', 'labor', 'rent', 'other'].includes(input.category)) return { ok: false, message: 'Pick a category.' }
-  if (!Number.isFinite(input.amount) || input.amount <= 0) return { ok: false, message: 'Enter the amount.' }
-  const { error } = await supabase.from('cost_entries').insert({
-    entry_date: input.date,
-    category: input.category,
-    amount: input.amount,
-    note: input.note.trim() || null,
-    created_by: user.id,
-  })
-  if (error) return { ok: false, message: error.message }
-  revalidatePath('/pulse')
-  return { ok: true, message: 'Cost added.' }
-}
-
 // One or many months at once. Each day is replaced, so uploading a file twice is safe.
 export async function uploadColmo(form: FormData): Promise<Result> {
   await requireOwner()
@@ -71,6 +35,6 @@ export async function uploadColmo(form: FormData): Promise<Result> {
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Could not read that file.' }
   }
-  revalidatePath('/pulse')
+  revalidatePath('/')
   return { ok: true, message: `Loaded ${days} trading days from ${files.length} file${files.length > 1 ? 's' : ''}.` }
 }

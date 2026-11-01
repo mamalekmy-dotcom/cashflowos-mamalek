@@ -20,11 +20,9 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
     '/marketing': 'edit',
     '/content': 'edit',
     '/crm': 'view',
-    '/leads': 'view',
-    '/customers': 'view',
     '/tasks': 'edit',
   },
-  sales: { '/crm': 'edit', '/leads': 'edit', '/customers': 'edit', '/tasks': 'edit' },
+  sales: { '/crm': 'edit', '/tasks': 'edit' },
   ops: { '/suppliers': 'edit', '/stock': 'edit', '/vault': 'edit', '/tasks': 'edit' },
   staff: { '/tasks': 'edit' },
 }
@@ -33,12 +31,7 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
 // on purpose: only the Owner role reaches the admin panel.
 export const GRANTABLE_TABS = [
   { href: '/', label: 'Dashboard' },
-  { href: '/pulse', label: 'P&L Pulse' },
-  { href: '/cash-in', label: 'Cash In' },
-  { href: '/cash-out', label: 'Cash Out' },
   { href: '/content', label: 'Content' },
-  { href: '/leads', label: 'Leads' },
-  { href: '/customers', label: 'Customers' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/approvals', label: 'Approvals' },
   { href: '/employees', label: 'AI Employees' },
@@ -56,7 +49,7 @@ export const GRANTABLE_TABS = [
 // record who sees what there.
 const EVERYONE = ['/account', '/scan', '/clock', '/chat', '/tasks', '/me', '/hr']
 
-// The first part of a path, so /leads/123 follows the rule for /leads.
+// The first part of a path, so /hr/leave follows the rule for /hr.
 const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')
 
 export function accessLevel(user: AccessUser, path: string): Level | null {
@@ -70,9 +63,8 @@ export function accessLevel(user: AccessUser, path: string): Level | null {
 // Links for owners only. The HR pages stay open to supervisors through the HR tab, so
 // this hides the shortcut from the menu rather than blocking the page.
 const OWNER_LINKS = ['/hr/leave', '/hr/people']
-// Tabs owners don't want in their menu. The pages still work: /me is how staff apply
-// for leave, sales needs Leads, the dashboard links to /pulse, and guest QR pages use /r.
-const HIDDEN_FROM_OWNERS = ['/pulse', '/cash-in', '/cash-out', '/leads', '/customers', '/me', '/reviews', '/memory']
+// Owners don't use My HR, but it stays for staff: it's how they apply for leave.
+const HIDDEN_FROM_OWNERS = ['/me']
 export const showsTab = (user: AccessUser, href: string) => {
   if (!accessLevel(user, href)) return false
   return user.role === 'owner' ? !HIDDEN_FROM_OWNERS.includes(href) : !OWNER_LINKS.includes(href)

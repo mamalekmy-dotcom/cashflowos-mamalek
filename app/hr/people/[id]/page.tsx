@@ -44,7 +44,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
     <>
       <h1 className="ph">{str(person.preferred_name) || str(person.full_name)}{person.is_demo ? ' (demo)' : ''}</h1>
       <p className="cap"><Link href="/hr/people">← People</Link></p>
-      <HRTabs active="/hr/people" hr={hr} />
+      <HRTabs active="/hr/people" hr={hr} manager trainer />
 
       {hr ? (
         <PersonEditor

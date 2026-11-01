@@ -93,3 +93,55 @@ test('a supervisor with no profile still gets their department, minus nobody', (
   const v = { userId: 99, appRole: 'staff', personId: null, grants: [{ capability: 'supervisor', department: 'BOH' }] }
   assert.deepEqual([...teamOf(v, people)], [4])
 })
+
+// ---------------------------------------------------------------- step 2
+import { canTrain, assignmentApplies, learningState, taskState } from '../../lib/hr/rules.ts'
+
+test('trainers reach training only: by department grant or being named on the plan', () => {
+  const deptTrainer = viewer(4, 'staff', [{ capability: 'trainer', department: 'FOH' }])
+  assert.equal(canTrain(deptTrainer, people, 3), true)        // Ali is FOH
+  assert.equal(canTrain(deptTrainer, people, 1), false)       // Boss is Management
+  assert.equal(canSeePerson(deptTrainer, people, 3), false)   // still no profile or leave
+  assert.equal(canSeeRestricted(deptTrainer), false)
+  const named = viewer(4)
+  const plans = [{ person_id: 3, primary_trainer_id: null, backup_trainer_id: 40 }]
+  assert.equal(canTrain(named, people, 3, plans), true)       // backup trainer on Ali's plan
+  assert.equal(canTrain(named, people, 2, plans), false)
+  assert.equal(canTrain(viewer(3, 'staff', [{ capability: 'trainer', department: '*' }]), people, 3), false) // not yourself
+  assert.equal(canTrain(sup, people, 3), true)                // supervisor of Ali
+  assert.equal(canTrain(ali, people, 2), false)               // plain staff
+})
+
+test('assignments match everyone, department, position (any case) or one person', () => {
+  const p = { id: 3, department: 'FOH', position: 'FOH Crew' }
+  assert.equal(assignmentApplies({ target_kind: 'everyone', target: null }, p), true)
+  assert.equal(assignmentApplies({ target_kind: 'department', target: 'BOH' }, p), false)
+  assert.equal(assignmentApplies({ target_kind: 'position', target: 'foh crew' }, p), true)
+  assert.equal(assignmentApplies({ target_kind: 'person', target: '3' }, p), true)
+  assert.equal(assignmentApplies({ target_kind: 'person', target: '4' }, p), false)
+})
+
+test('learning state: due, overdue, done, new version, refresher', () => {
+  const base = { practical: false, currentVersion: 1, dueDays: 14, refresherMonths: null, from: '2026-10-01', today: '2026-10-10' }
+  assert.deepEqual(learningState(base, []), { state: 'due', due: '2026-10-15' })
+  assert.deepEqual(learningState({ ...base, today: '2026-10-16' }, []), { state: 'overdue', due: '2026-10-15' })
+  const done = [{ version: 1, completed_at: '2026-10-05T03:00:00Z', kind: 'self' }]
+  assert.equal(learningState(base, done).state, 'done')
+  assert.equal(learningState({ ...base, currentVersion: 2 }, done).state, 'new_version')
+  assert.equal(learningState({ ...base, refresherMonths: 6, today: '2027-04-05' }, done).state, 'refresher_due')
+  assert.equal(learningState({ ...base, refresherMonths: 6, today: '2027-04-04' }, done).state, 'done')
+})
+
+test('practical courses need a trainer sign-off, not just self-completion', () => {
+  const base = { practical: true, currentVersion: 1, dueDays: 7, refresherMonths: null, from: '2026-10-01', today: '2026-10-03' }
+  assert.equal(learningState(base, [{ version: 1, completed_at: '2026-10-02', kind: 'self' }]).state, 'due')
+  assert.equal(learningState(base, [{ version: 1, completed_at: '2026-10-02', kind: 'trainer' }]).state, 'done')
+})
+
+test('onboarding task is done only when assessed competent AND acknowledged', () => {
+  const t = { instructed_at: 'x', practised_at: 'x', acknowledged_at: null, assessed_at: 'x', outcome: 'competent', due_date: '2026-10-01' }
+  assert.equal(taskState(t, '2026-10-05'), 'overdue')
+  assert.equal(taskState({ ...t, acknowledged_at: 'x' }, '2026-10-05'), 'done')
+  assert.equal(taskState({ ...t, outcome: 'needs_follow_up' }, '2026-10-05'), 'follow_up')
+  assert.equal(taskState({ ...t, outcome: null, due_date: null }, '2026-10-05'), 'open')
+})

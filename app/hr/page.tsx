@@ -44,7 +44,7 @@ export default async function HRHome() {
     <>
       <h1 className="ph">HR</h1>
       <p className="cap">{hr ? 'Everyone' : 'Your team'} · today {today}</p>
-      <HRTabs active="/hr" hr={hr} />
+      <HRTabs active="/hr" hr={hr} manager trainer />
 
       <div className="grid">
         <Stat label="Leave to decide" value={pending?.length ?? 0} yes={!!pending?.length} href="/hr/leave" />

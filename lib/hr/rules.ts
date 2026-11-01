@@ -133,3 +133,67 @@ export const canDecideLeave = (v: Viewer, people: PersonLite[], personId: number
 
 // Restricted fields (salary, IC, bank, medical) and documents: HR only.
 export const canSeeRestricted = (v: Viewer) => isHR(v)
+
+// ---------------------------------------------------------------
+// Training. A trainer reaches someone's TRAINING records only: through a
+// department trainer grant, or by being named on their onboarding plan. That never
+// widens canSeePerson, so profiles, leave and restricted fields stay closed.
+// ---------------------------------------------------------------
+export type PlanTrainers = { person_id: number; primary_trainer_id: number | null; backup_trainer_id: number | null }
+
+export function canTrain(v: Viewer, people: PersonLite[], personId: number, plans: PlanTrainers[] = []): boolean {
+  if (v.personId === personId) return false // nobody signs off their own training
+  if (isHR(v) || teamOf(v, people).has(personId)) return true
+  const dept = people.find(p => p.id === personId)?.department
+  if (v.grants.some(g => g.capability === 'trainer' && (g.department === '*' || g.department === dept))) return true
+  return plans.some(p => p.person_id === personId && (p.primary_trainer_id === v.userId || p.backup_trainer_id === v.userId))
+}
+
+// Does this assignment apply to this person?
+export type AssignmentLite = { target_kind: string; target: string | null }
+export function assignmentApplies(a: AssignmentLite, p: { id: number; department: string | null; position: string | null }): boolean {
+  if (a.target_kind === 'everyone') return true
+  if (a.target_kind === 'department') return !!p.department && a.target === p.department
+  if (a.target_kind === 'position') return !!p.position && a.target?.toLowerCase() === p.position.toLowerCase()
+  if (a.target_kind === 'person') return a.target === String(p.id)
+  return false
+}
+
+export type LearningState = 'done' | 'due' | 'overdue' | 'refresher_due' | 'new_version'
+export type Completion = { version: number; completed_at: string; kind: 'self' | 'trainer' }
+
+const addMonths = (iso: string, n: number) => {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`)
+  d.setUTCMonth(d.getUTCMonth() + n)
+  return d.toISOString().slice(0, 10)
+}
+export const addDaysISO = (iso: string, n: number) => new Date(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
+
+// Where one person stands on one course. Practical courses only count a trainer's
+// sign-off; the rest count the person's own completion too. `from` is the later of
+// the assignment date and the person's join date.
+export function learningState(
+  opts: { practical: boolean; currentVersion: number; dueDays: number; refresherMonths: number | null; from: string; today: string },
+  completions: Completion[],
+): { state: LearningState; due: string } {
+  const counted = completions.filter(c => !opts.practical || c.kind === 'trainer')
+  const latest = [...counted].sort((a, b) => b.completed_at.localeCompare(a.completed_at))[0]
+  const firstDue = addDaysISO(opts.from, opts.dueDays)
+  if (!latest) return { state: opts.today > firstDue ? 'overdue' : 'due', due: firstDue }
+  if (latest.version < opts.currentVersion) return { state: 'new_version', due: opts.today }
+  if (opts.refresherMonths) {
+    const again = addMonths(latest.completed_at, opts.refresherMonths)
+    if (opts.today >= again) return { state: 'refresher_due', due: again }
+    return { state: 'done', due: again }
+  }
+  return { state: 'done', due: '' }
+}
+
+// Where an onboarding task stands, from its four separate records.
+export type TaskRecords = { instructed_at: string | null; practised_at: string | null; acknowledged_at: string | null; assessed_at: string | null; outcome: string | null; due_date: string | null }
+export function taskState(t: TaskRecords, today: string): 'done' | 'follow_up' | 'overdue' | 'open' {
+  if (t.outcome === 'competent' && t.acknowledged_at) return 'done'
+  if (t.outcome === 'needs_follow_up' || t.outcome === 'not_yet') return 'follow_up'
+  if (t.due_date && t.due_date < today) return 'overdue'
+  return 'open'
+}

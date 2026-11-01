@@ -59,6 +59,23 @@ export async function downloadFileBytes(filePath: string): Promise<Buffer | null
   }
 }
 
+// The bot's own @username, so the webhook can tell when a group message is meant for
+// it. Asked once per server instance. Returns null (never throws) if Telegram says no.
+let botUsername: string | null = null
+export async function getBotUsername(): Promise<string | null> {
+  if (botUsername) return botUsername
+  const url = api('getMe')
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    const body = await res.json().catch(() => ({}))
+    botUsername = body.result?.username ?? null
+  } catch (e) {
+    console.error('[CFO] getMe threw:', e)
+  }
+  return botUsername
+}
+
 // A single inline-keyboard button. `callback_data` is what the webhook receives
 // when the user taps it — e.g. "apr:42" (approve action 42) / "rej:42".
 export type InlineButton = { text: string; callback_data: string }

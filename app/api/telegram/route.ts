@@ -8,6 +8,7 @@ import {
   editMessageReplyMarkup,
   getFilePath,
   downloadFileBytes,
+  getBotUsername,
 } from '@/lib/telegram'
 import { loadTurns, appendTurn, bumpDailyCounter } from '@/lib/bot-memory'
 import { getRecords, rm, todayISO, todayWeekday, upcomingDays } from '@/lib/records'
@@ -44,6 +45,22 @@ async function isAllowed(id: unknown): Promise<boolean> {
   const linked = await userByTelegramId(id)
   if (linked) return linked.active
   return ALLOWED.includes(String(id))
+}
+
+// Which groups the bot works in. FAIL CLOSED: a group that isn't listed gets silence,
+// so nobody can pull the bot into another chat and read the numbers there.
+const TEAM_GROUPS = (process.env.TELEGRAM_TEAM_CHAT_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
+// In a group the bot speaks only when spoken to: an @mention, a reply to one of its
+// messages, or /command@thebot. GROUP_REPLY_TO_ALL=true turns that off.
+function spokenToBot(msg: any, me: string | null): boolean {
+  if (process.env.GROUP_REPLY_TO_ALL === 'true') return true
+  if (!me) return false
+  if (msg.reply_to_message?.from?.username?.toLowerCase() === me.toLowerCase()) return true
+  return new RegExp(`@${me}\\b`, 'i').test(msg.text || msg.caption || '')
 }
 
 // Approve, Reject and /undo are for active owners. OWNER_CHAT_ID still counts when
@@ -228,6 +245,20 @@ async function handleMessage(msg: any): Promise<Response> {
   // gets no reply at all, not even a refusal.
   if (!(await isAllowed(msg.from?.id))) return Response.json({ ok: true })
 
+  // Group rules. /id comes first because you need the id before the group can be
+  // listed in TELEGRAM_TEAM_CHAT_IDS.
+  const inGroup = msg.chat?.type === 'group' || msg.chat?.type === 'supergroup'
+  const me = inGroup ? await getBotUsername() : null
+  if (inGroup) {
+    if (/^\/id(@\w+)?$/i.test((msg.text || '').trim())) {
+      await sendMessage(chatId, `This group's ID: <code>${chatId}</code>`)
+      return Response.json({ ok: true })
+    }
+    if (!TEAM_GROUPS.includes(String(chatId)) || !spokenToBot(msg, me)) {
+      return Response.json({ ok: true })
+    }
+  }
+
   // Photo / document → the Vault agent. ACK-FIRST (MANDATED): the ONLY work we do
   // before returning 200 is {secret (done in POST), allowlist (just above),
   // tg_updates dedupe (done in POST)}. Everything heavy — size/mime checks, the
@@ -242,7 +273,9 @@ async function handleMessage(msg: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
-  const text: string = (msg.text || '').trim()
+  // Drop the bot's own @name so "/help@thebot" and "@thebot sales?" read like a DM.
+  const raw: string = msg.text || ''
+  const text: string = (me ? raw.replace(new RegExp(`@${me}\\b`, 'ig'), ' ') : raw).trim()
   if (!text) return Response.json({ ok: true })
 
   if (text.toLowerCase() === '/start' || text.toLowerCase() === '/help') {

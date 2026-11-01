@@ -44,6 +44,14 @@ export const JARVIS = {
    * the code and can't be switched off from here.
    */
   never: [] as string[],       // e.g. ['never discuss pricing with anyone but me']
+
+  // ── 👉 BRIEF ──────────────────────────────────────────────────────────────
+  /**
+   * Who gets the morning brief. Empty = OWNER_CHAT_ID, your private DM. Put a group
+   * id here (minus sign kept) to send it there instead. This REPLACES your private
+   * brief, and everyone in that group will see the money figures.
+   */
+  briefChatIds: [] as string[], // e.g. ['-1001234567890']
 }
 
 /**

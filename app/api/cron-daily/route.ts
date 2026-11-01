@@ -4,6 +4,7 @@ import { sendMessage } from '@/lib/telegram'
 import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm, todayISO, type Rec } from '@/lib/records'
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
+import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // THE ONE daily cron (Vercel Hobby allows 2; we ship 1, reserve the other).
@@ -22,15 +23,15 @@ import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// Who receives the brief: your team's numeric Telegram ids (comma-separated), or
-// OWNER_CHAT_ID as the solo fallback. None set = nobody (the brief just no-ops).
+// Who receives the brief: briefChatIds in jarvis/config.ts, or OWNER_CHAT_ID as the
+// default. None set = nobody (the brief just no-ops). Listing a group in
+// TELEGRAM_TEAM_CHAT_IDS only lets the bot work there; it doesn't send the brief there.
 function recipients(): string[] {
-  const team = (process.env.TELEGRAM_TEAM_CHAT_IDS || '')
-    .split(',')
+  const chosen = JARVIS.briefChatIds
     .map((s) => s.trim())
     .filter((s) => /^-?\d+$/.test(s))
-  const list = team.length
-    ? team
+  const list = chosen.length
+    ? chosen
     : ([process.env.OWNER_CHAT_ID?.trim()].filter(Boolean) as string[])
   return Array.from(new Set(list))
 }

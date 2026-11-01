@@ -2,6 +2,7 @@ import 'server-only'
 import type { Rec } from './records'
 import { rm, todayISO, getFunnel, isCashReceived, cashReceivedAt } from './records'
 import { supabase } from './supabase'
+import { dailyFoodCost, FOOD_BASIS_LABEL } from './daily-cogs'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Jarvis bot's HANDS. Instead of dumping your whole table into the prompt,
@@ -59,12 +60,28 @@ export const BOT_TOOLS = [
     name: 'get_cogs',
     description:
       'Get COGS for a month: the official TMS COGS, the food cost worked out from stock counts (opening + ' +
-      'bought - closing), and supplier purchases with the top suppliers. Use this for ANY question about ' +
-      'COGS, cost of goods, food cost %, ingredient cost, stock value or purchasing.',
+      'bought - closing), and supplier purchases with the top suppliers. Use this for monthly questions about ' +
+      'COGS, cost of goods, food cost %, ingredient cost, stock value or purchasing. For a day or a date ' +
+      'range use get_daily_cogs.',
     input_schema: {
       type: 'object' as const,
       properties: {
         month: { type: 'string', description: 'A calendar month as YYYY-MM, e.g. 2026-09. Default: the latest month in TMS.' },
+      },
+    },
+  },
+  {
+    name: 'get_daily_cogs',
+    description:
+      'Get COGS and purchasing day by day: each day\'s sales, estimated food cost, and actual supplier ' +
+      'purchases. Use this for ANY question about daily COGS, COGS "throughout the days", one date, or a ' +
+      'date range like "purchasing 20-31 Oct". Pass month, or from and to.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        month: { type: 'string', description: 'A calendar month as YYYY-MM. Used when from and to are not given.' },
+        from: { type: 'string', description: 'First date as YYYY-MM-DD.' },
+        to: { type: 'string', description: 'Last date as YYYY-MM-DD.' },
       },
     },
   },
@@ -380,6 +397,55 @@ export async function runCogsTool(input: any): Promise<string> {
   } catch (e) {
     console.error('[CFO] cogs tool failed:', e)
     return JSON.stringify({ error: 'Could not read COGS right now.' })
+  }
+}
+
+const DAILY_COGS_MAX_DAYS = 62
+
+export async function runDailyCogsTool(input: any): Promise<string> {
+  try {
+    const isDate = (s: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? ''))
+    const month = /^\d{4}-\d{2}$/.test(input?.month ?? '') ? input.month : todayISO().slice(0, 7)
+    const from: string = isDate(input?.from) ? input.from : isDate(input?.to) ? input.to : `${month}-01`
+    const to: string = isDate(input?.to) ? input.to : isDate(input?.from) ? input.from : monthEnd(month)
+    if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > DAILY_COGS_MAX_DAYS) {
+      return JSON.stringify({ error: `That range is too long. Ask for ${DAILY_COGS_MAX_DAYS} days or fewer.` })
+    }
+
+    const { days, months } = await dailyFoodCost(from, to)
+    if (!days.length) return JSON.stringify({ from, to, message: 'No sales or purchases logged for these dates.' })
+
+    const add = (key: 'sales' | 'food_cost' | 'purchases') => days.reduce((s, d) => s + d[key], 0)
+    return JSON.stringify({
+      from,
+      to,
+      totals: {
+        sales_before_tax: money(add('sales')),
+        estimated_food_cost: money(add('food_cost')),
+        food_cost_percent: percent(add('food_cost'), add('sales')),
+        actual_supplier_purchases: money(add('purchases')),
+      },
+      how_each_month_was_worked_out: months.map(m => ({
+        month: m.month,
+        food_cost_percent: `${(m.rate * 100).toFixed(1)}%`,
+        basis: FOOD_BASIS_LABEL[m.basis],
+      })),
+      days: days.map(d => ({
+        date: d.date,
+        sales: money(d.sales),
+        estimated_food_cost: money(d.food_cost),
+        supplier_purchases: money(d.purchases),
+      })),
+      how_to_answer:
+        'estimated_food_cost is an estimate: that day\'s sales x the month\'s food cost %. Always call it ' +
+        'estimated and never actual daily COGS, because stock is only counted monthly. It has the same % ' +
+        'every day, so do not read kitchen performance into it. supplier_purchases are real, but they show ' +
+        'what was bought that day, not what was used, and include some non-food suppliers. Keep long ' +
+        'ranges short: give the totals and the highest days unless asked for every day.',
+    })
+  } catch (e) {
+    console.error('[CFO] daily cogs tool failed:', e)
+    return JSON.stringify({ error: 'Could not read daily COGS right now.' })
   }
 }
 

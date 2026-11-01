@@ -15,7 +15,7 @@ import { getRecords, rm, todayISO, todayWeekday, upcomingDays } from '@/lib/reco
 import { userByTelegramId } from '@/lib/session'
 import { claim, executeClaimed, summarizeResult, undoAction, runAutopilot, proposeAndNotify } from '@/lib/actions'
 import { readImage, type VisionResult } from '@/lib/vision'
-import { BOT_TOOLS, runBotTool, runCogsTool, runSalesTool } from '@/lib/bot-tools'
+import { BOT_TOOLS, runBotTool, runCogsTool, runDailyCogsTool, runSalesTool } from '@/lib/bot-tools'
 import { BOT_ACTION_TOOLS, ACTION_TOOL_NAMES, runBotAction } from '@/lib/bot-actions'
 import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
@@ -502,7 +502,9 @@ async function answerWithTools(chatId: number, text: string, apiKey: string, fro
               ? await runSalesTool(t.input)
               : t.name === 'get_cogs'
                 ? await runCogsTool(t.input)
-                : runBotTool(t.name, t.input, rows)
+                : t.name === 'get_daily_cogs'
+                  ? await runDailyCogsTool(t.input)
+                  : runBotTool(t.name, t.input, rows)
           if (isAction) toolOutput.push(out)
           return {
             type: 'tool_result' as const,

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { rm, todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
+import { dailyFoodCost, FOOD_BASIS_LABEL } from '@/lib/daily-cogs'
 import Stat from '@/app/_components/Stat'
 import { AddCost, DayCell, UploadSales } from './PulseActions'
 
@@ -38,11 +39,18 @@ export default async function Pulse({ searchParams }: { searchParams: Promise<{ 
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`
   }
 
-  const [{ data: sales }, { data: costs }, { data: tmsRow }] = await Promise.all([
+  const [{ data: sales }, { data: costs }, { data: tmsRow }, foodCost] = await Promise.all([
     supabase.from('daily_sales').select('sale_date, net_sales, receipts, pax').gte('sale_date', from).lte('sale_date', to),
     supabase.from('cost_entries').select('category, amount').gte('entry_date', from).lte('entry_date', to),
     supabase.from('monthly_pnl').select('net_sales, cogs, variable_costs, labor, rent, fixed_costs, profit_before_tax, pax').eq('month', month).maybeSingle(),
+    dailyFoodCost(from, to).catch(e => {
+      console.error('[CFO] daily food cost failed:', e)
+      return { days: [], months: [] }
+    }),
   ])
+  const foodBasis = foodCost.months[0]
+  const foodTotal = foodCost.days.reduce((sum, d) => sum + d.food_cost, 0)
+  const boughtTotal = foodCost.days.reduce((sum, d) => sum + d.purchases, 0)
 
   const tms = tmsRow ? (Object.fromEntries(Object.entries(tmsRow).map(([k, v]) => [k, Number(v)])) as MonthlyPnl) : null
   const byDay = new Map((sales ?? []).map(s => [s.sale_date as string, Number(s.net_sales)]))
@@ -113,6 +121,33 @@ export default async function Pulse({ searchParams }: { searchParams: Promise<{ 
         </tbody>
       </table>
       <p className="cap figure">{receipts.toLocaleString('en-MY')} receipts · {pax.toLocaleString('en-MY')} pax · {byDay.size} trading days</p>
+
+      {foodBasis ? (
+        <>
+          <p className="rowlabel" style={{ marginTop: 24 }}>Daily food cost</p>
+          <p className="cap">
+            Estimated: each day&apos;s sales before tax × {(foodBasis.rate * 100).toFixed(1)}% ({FOOD_BASIS_LABEL[foodBasis.basis]}).
+            Stock is counted monthly, so the % is the same every day. Purchases are actual.
+          </p>
+          <p className="cap figure">Estimated food cost {rm(Math.round(foodTotal))} · Purchases {rm(Math.round(boughtTotal))}</p>
+          <details style={{ marginBottom: 24 }}>
+            <summary>Show every day</summary>
+            <table className="tbl">
+              <thead><tr><th>Date</th><th>Sales</th><th>Est. food cost</th><th>Purchases</th></tr></thead>
+              <tbody>
+                {foodCost.days.map(d => (
+                  <tr key={d.date}>
+                    <td data-label="Date">{d.date}</td>
+                    <td data-label="Sales">{rm(d.sales)}</td>
+                    <td data-label="Est. food cost">{rm(Math.round(d.food_cost))}</td>
+                    <td data-label="Purchases">{rm(Math.round(d.purchases))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </>
+      ) : null}
 
       <UploadSales />
       <AddCost defaultDate={today} />

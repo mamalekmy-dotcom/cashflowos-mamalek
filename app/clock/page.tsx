@@ -14,6 +14,7 @@ const timeOf = (at: string) => new Date(at).toLocaleTimeString('en-GB', { timeZo
 export default async function Clock() {
   const user = await getCurrentUser()
   if (!user) redirect('/login')
+  if (user.role === 'owner') redirect('/team/history')
   const today = todayISO()
   const since = new Date(Date.now() - DAYS_SHOWN * 86_400_000).toISOString()
 

@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import FunnelBar from '@/app/_components/FunnelBar'
@@ -73,8 +72,7 @@ export default async function Dashboard() {
       <p className="cap">Costs, the river, the money, and what needs your YES.</p>
 
       <p className="cap">
-        {sales ? `Sales logged up to ${sales.lastDate}. ` : 'No sales logged yet. '}
-        <Link href="/clock">Clock in</Link>
+        {sales ? `Sales logged up to ${sales.lastDate}.` : 'No sales logged yet.'}
       </p>
 
       {/* Row 0 — costs as a share of net sales, last closed month */}

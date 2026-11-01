@@ -64,8 +64,11 @@ export function accessLevel(user: AccessUser, path: string): Level | null {
 // Links for owners only. The HR pages stay open to supervisors through the HR tab, so
 // this hides the shortcut from the menu rather than blocking the page.
 const OWNER_LINKS = ['/hr/leave', '/hr/people']
-export const showsTab = (user: AccessUser, href: string) =>
-  !!accessLevel(user, href) && (user.role === 'owner' || !OWNER_LINKS.includes(href))
+// Clocking in is for staff, so owners don't get it.
+export const showsTab = (user: AccessUser, href: string) => {
+  if (!accessLevel(user, href)) return false
+  return user.role === 'owner' ? href !== '/clock' : !OWNER_LINKS.includes(href)
+}
 
 // Where someone lands after login: staff go straight to clock in, everyone else to
 // the Dashboard if they have it, otherwise their first tab. /account always works, so

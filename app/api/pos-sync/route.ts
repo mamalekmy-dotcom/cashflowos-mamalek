@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/auth'
 import { posConfigured, posDays } from '@/lib/geniuspos'
 import { supabase } from '@/lib/supabase'
+import { syncPosDays } from '@/lib/pos-sync'
 
-// Owner-only check of what GeniusPOS returns for a date range. It saves nothing, so it
-// can be run as often as needed while the figures are being matched to the POS reports.
+// Owner-only check of what GeniusPOS returns for a date range, next to what daily_sales
+// holds. It saves nothing unless ?save=1 is added.
 //   /api/pos-sync?from=2026-10-01&to=2026-10-31
+//   /api/pos-sync?from=2026-11-01&to=2026-11-03&save=1
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,6 +22,14 @@ export async function GET(req: Request) {
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to') ?? from
   if (!isDate(from) || !isDate(to)) return NextResponse.json({ ok: false, message: 'Add ?from=YYYY-MM-DD&to=YYYY-MM-DD' })
+  // ?save=1 copies the days into daily_sales now, the same as the morning run does.
+  if (url.searchParams.get('save') === '1') {
+    try {
+      return NextResponse.json({ ok: true, ...(await syncPosDays(from as string, to as string)) })
+    } catch (e) {
+      return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : 'POS sync failed.' }, { status: 502 })
+    }
+  }
   try {
     const days = await posDays(from as string, to as string)
     const sum = (key: 'grand_total' | 'tax' | 'rounding' | 'discount' | 'void_amount' | 'cost' | 'receipts' | 'pax') =>

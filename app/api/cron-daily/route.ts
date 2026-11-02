@@ -5,6 +5,8 @@ import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm, todayISO, 
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
 import { ensureMonth, stockConfigured } from '@/lib/stock-sheet'
+import { posConfigured } from '@/lib/geniuspos'
+import { syncPosDays } from '@/lib/pos-sync'
 import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -65,6 +67,12 @@ export async function GET(req: Request) {
       .select('agent_key, payload')
       .eq('status', 'proposed')
     proposed = (data ?? []) as any[]
+  }
+
+  // Yesterday's POS sales (and any day missed in the last week) before the brief reads them.
+  if (posConfigured()) {
+    const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10)
+    await syncPosDays(weekAgo, today).catch(e => console.error('[CFO] POS sync failed:', e))
   }
 
   const sales = await latestMonthSales()

@@ -108,8 +108,8 @@ async function advance(draft: Draft, draftId?: number): Promise<void> {
 function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context): string {
   const body = lines.map(l =>
     l.item === NOT_STOCK
-      ? `• ${esc(l.text)}: not stock`
-      : `• ${esc(l.item)}: ${l.qty ?? '?'} ${esc(l.unit)} @ ${l.price?.toFixed(2) ?? '?'}`,
+      ? `• ${esc(l.text)}: not stock, RM${l.amount?.toFixed(2) ?? '?'}`
+      : `• ${esc(l.item)}: ${l.qty ?? '?'} ${esc(l.unit)} × RM${l.price?.toFixed(2) ?? '?'} = <b>RM${l.amount?.toFixed(2) ?? '?'}</b>`,
   )
   const parts = [
     `🧾 <b>${esc(supplier)}</b> · ${bill.date ? shown(bill.date) : 'no date'} · ${esc(bill.invoice || 'no invoice no.')}`,
@@ -191,7 +191,7 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
   }
   await sendWithButtons(
     draft.sender.approvalChat,
-    `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} @ ${line.price?.toFixed(2) ?? '?'}).\n` +
+    `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +
       `Which stock row is it? If it isn't listed, tap Cancel, add it to the sheet, and resend.`,
     rows([
       ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),

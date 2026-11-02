@@ -5,7 +5,7 @@ import { sendMessage, sendWithButtons, getFilePath, downloadFileBytes, type Inli
 import { propose, proposeAndNotify, claim, markExecuted, type ActionRow } from './actions'
 import { todayISO, rm } from './records'
 import {
-  NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessItems, billKey, ymOf, spikesIn, perUnit,
+  NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
   type Bill, type Context, type Spike,
 } from './stock-logic'
 import { sheetContext, addAlias, setPrice, writeReceipt } from './stock-sheet'
@@ -154,13 +154,23 @@ const rows = (buttons: InlineKeyboard[number]): InlineKeyboard => buttons.map(b 
 
 async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void> {
   const { bill, sender } = draft
-  const names = ctx.suppliers.map(s => s.name)
-  const guess = candidates(bill.supplier, names)
+  const names = [...new Set(ctx.suppliers.map(s => s.name))].filter(n => n !== OTHERS)
+  let guess = candidates(bill.supplier, names)
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!guess.length && apiKey) {
+    const about = `${bill.supplier}; ${bill.lines.map(l => l.text).join(', ')}`.slice(0, 400)
+    guess = await guessNames(about, names, apiKey, 'supplier').catch(e => {
+      console.error('[CFO] supplier guess failed:', e)
+      return []
+    })
+  }
+  // Buttons carry the column, so a guess list that changes later can't pick the wrong one.
+  const column = (name: string) => ctx.suppliers.find(s => s.name === name)?.col
   await sendWithButtons(
     sender.approvalChat,
     `🏷 New supplier on a bill: <b>${esc(bill.supplier || 'name not readable')}</b>, ${rm(bill.total ?? 0)}.\nWhich Purchase column is this?`,
     rows([
-      ...guess.map((name, i) => ({ text: name.slice(0, 40), callback_data: `sms:${id}:${i}` })),
+      ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `sms:${id}:k${column(name)}` })),
       { text: 'OTHERS column', callback_data: `sms:${id}:o` },
       { text: 'Not a stock purchase', callback_data: `sms:${id}:x` },
       { text: '🛑 Cancel this bill', callback_data: `sms:${id}:c` },
@@ -174,7 +184,7 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
   let guess = candidates(line.text, names)
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!guess.length && apiKey) {
-    guess = await guessItems(line.text, names, apiKey).catch(e => {
+    guess = await guessNames(line.text, names, apiKey, 'item').catch(e => {
       console.error('[CFO] item guess failed:', e)
       return []
     })
@@ -186,6 +196,7 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
     rows([
       ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
       { text: 'Not a stock item', callback_data: `smi:${id}:${index}:x` },
+      { text: '🧾 Whole bill is not stock', callback_data: `smi:${id}:${index}:a` },
       { text: '🛑 Cancel this bill', callback_data: `smi:${id}:${index}:c` },
     ]),
   )
@@ -216,7 +227,10 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
       await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
       return { toast: 'Cancelled.' }
     }
-    const target = a === 'o' ? OTHERS : candidates(draft.bill.supplier, ctx.suppliers.map(s => s.name))[Number(a)]
+    // Older buttons carry a place in the word-match list instead of a column.
+    const target = a === 'o' ? OTHERS
+      : a.startsWith('k') ? ctx.suppliers.find(s => `k${s.col}` === a)?.name
+      : candidates(draft.bill.supplier, ctx.suppliers.map(s => s.name))[Number(a)]
     if (!target) return { toast: 'That choice has gone. Send the bill again.' }
     await addAlias('supplier', draft.bill.supplier, target)
   } else {
@@ -226,6 +240,12 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
       await closeDraft(id)
       await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
       return { toast: 'Cancelled.' }
+    }
+    if (b === 'a') {
+      // Every line not matched yet is not stock, so the bill only goes to the Purchase tab.
+      for (const l of draft.bill.lines) if (!matchItem(ctx, l.text)) await addAlias('item', l.text, NOT_STOCK)
+      await advance(draft, id)
+      return { toast: 'Whole bill marked not stock.' }
     }
     const target = b === 'x' ? NOT_STOCK : ctx.items.find(i => `r${i.row}` === b)?.name
     if (!target) return { toast: 'That choice has gone. Send the bill again.' }

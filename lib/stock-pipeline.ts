@@ -122,7 +122,7 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     agentKey: 'stock-receipt',
     idempotencyKey: `stock:${key}:${randomUUID()}`,
     payload: {
-      key, text, date: bill.date, supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
+      key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
       fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
     },
     chatId: sender.approvalChat,
@@ -297,7 +297,7 @@ async function scanBase64(path: string): Promise<string | null> {
 export async function recordReceipt(p: any) {
   const base64 = p.fileId ? await fileBase64(p.fileId) : p.storagePath ? await scanBase64(p.storagePath) : null
   const res = await writeReceipt({
-    key: p.key, date: p.date, supplier: p.supplier, invoice: p.invoice, total: p.total, lines: p.lines, sentBy: p.sentBy,
+    key: p.key, date: p.date, supplier: p.supplier, printed: p.printed, invoice: p.invoice, total: p.total, lines: p.lines, sentBy: p.sentBy,
     photo: base64 ? { base64, mime: p.mime } : null,
   })
   if (res.duplicate) return { kind: 'stock_duplicate', supplier: p.supplier, invoice: p.invoice }

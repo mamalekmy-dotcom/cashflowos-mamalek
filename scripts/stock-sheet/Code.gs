@@ -186,15 +186,48 @@ function addTo(range, amount) {
   range.setValue(Math.round((base + amount) * 1000) / 1000)
 }
 
-function savePhoto(photo, date, supplier, invoice) {
-  const ss = SpreadsheetApp.getActive()
-  const parent = DriveApp.getFileById(ss.getId()).getParents().next()
+// The owner's "Suppliers Invoices" folder: one folder per supplier, then year, then
+// month as "11 NOV".
+const INVOICES_FOLDER_ID = '1ejOvbXgotMGAhI5xN5I5MGSYY0TryPYN'
+const MONTH_FOLDERS = ['01 JAN', '02 FEB', '03 MAR', '04 APR', '05 MAY', '06 JUN', '07 JUL', '08 AUG', '09 SEP', '10 OCT', '11 NOV', '12 DEC']
+const FOLDER_NOISE = ['SDN', 'BHD', 'THE', 'AND', 'TRADING', 'MARKETING', 'ENTERPRISE', 'FROZEN', 'FOOD', 'FRESH', 'CASH', 'CARRY', 'MOHD', 'BIN']
+const folderWords = s => clean(s).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length > 2 && FOLDER_NOISE.indexOf(w) < 0)
+
+// The owner names supplier folders their own way ("ATLAS (ICE)", "ZEST FROZEN FOOD
+// SDN BHD"), so match on the main word of the sheet column, then of the name printed
+// on the bill. With no match, a folder is made under the clearest name.
+function supplierFolder(root, names) {
+  const folders = []
+  const it = root.getFolders()
+  while (it.hasNext()) folders.push(it.next())
+  const squash = s => clean(s).toUpperCase().replace(/[^A-Z0-9]+/g, '')
+  for (const name of names) {
+    const want = folderWords(name)
+    const flat = squash(name)
+    if (!flat) continue
+    const exact = folders.find(f => same(f.getName(), name))
+    if (exact) return exact
+    // "MR D.I.Y. (KUCHAI)" holds "MRDIY"; "IRAS SELERA (BEEF BALL)" holds "IRASSELERA".
+    const inside = folders.find(f => squash(f.getName()).length >= 4 && (flat.indexOf(squash(f.getName())) >= 0 || squash(f.getName()).indexOf(flat) >= 0))
+    if (inside) return inside
+    // One word in common, only when no other folder shares it ("VEGETABLES" is in three).
+    const hits = want.length ? folders.filter(f => folderWords(f.getName()).indexOf(want[0]) >= 0) : []
+    if (hits.length === 1) return hits[0]
+  }
+  const label = names.find(n => folderWords(n).length) || 'OTHERS'
+  return root.createFolder(clean(label).replace(/[\\/:*?"<>|]/g, ' '))
+}
+
+function savePhoto(photo, date, supplier, invoice, printed) {
   const sub = (folder, name) => {
     const hit = folder.getFoldersByName(name)
     return hit.hasNext() ? hit.next() : folder.createFolder(name)
   }
   const safe = supplier.replace(/[\\/:*?"<>|]/g, ' ').trim()
-  const folder = sub(sub(sub(parent, 'Receipts'), date.slice(0, 7)), safe)
+  // OTHERS is a Purchase column, not a supplier, so the printed name decides the folder.
+  const names = supplier === 'OTHERS' ? [printed, supplier] : [supplier, printed]
+  const root = DriveApp.getFolderById(INVOICES_FOLDER_ID)
+  const folder = sub(sub(supplierFolder(root, names.filter(Boolean)), date.slice(0, 4)), MONTH_FOLDERS[Number(date.slice(5, 7)) - 1])
   const ext = photo.mime === 'application/pdf' ? 'pdf' : photo.mime === 'image/png' ? 'png' : 'jpg'
   const name = `${date} ${safe}${invoice ? ' ' + invoice.replace(/[\\/:*?"<>|]/g, '-') : ''}.${ext}`
   const blob = Utilities.newBlob(Utilities.base64Decode(photo.base64), photo.mime, name)
@@ -202,7 +235,7 @@ function savePhoto(photo, date, supplier, invoice) {
 }
 
 function writeReceipt(req) {
-  const { key, date, supplier, invoice, total, lines, photo, sentBy, logOnly } = req
+  const { key, date, supplier, invoice, total, lines, photo, sentBy, logOnly, printed } = req
   const logSheet = tab(LOG_TAB, LOG_HEADERS)
   if (logSheet.getLastRow() > 1) {
     const keys = logSheet.getRange(2, LOG_HEADERS.length, logSheet.getLastRow() - 1, 1).getValues()
@@ -244,7 +277,7 @@ function writeReceipt(req) {
     addTo(purchaseCell, Number(total))
   }
 
-  const link = photo ? savePhoto(photo, date, supplier, invoice) : ''
+  const link = photo ? savePhoto(photo, date, supplier, invoice, printed) : ''
   const now = new Date()
   const rows = (lines.length ? lines : [{}]).map(l => [
     now, date, supplier, invoice || '', l.item === NOT_STOCK ? '' : l.item || '', l.text || '',

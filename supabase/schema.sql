@@ -148,9 +148,12 @@ create table if not exists daily_sales (
   qr         numeric     not null default 0,
   card       numeric     not null default 0,
   online     numeric     not null default 0,
-  source     text        not null default 'manual',    -- manual | colmo
+  source     text        not null default 'manual',    -- manual | colmo | geniuspos
   updated_at timestamptz not null default now()
 );
+-- What the POS charged on top of net sales, from GeniusPOS.
+alter table daily_sales add column if not exists service_charge numeric not null default 0;
+alter table daily_sales add column if not exists sst            numeric not null default 0;
 
 -- ------------------------------------------------------------
 -- 10) cost_entries — what P&L Pulse splits sales into.

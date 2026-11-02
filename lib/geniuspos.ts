@@ -52,6 +52,8 @@ export type PosDay = {
   pax: number
   grand_total: number
   tax: number
+  service_charge: number
+  sst: number
   rounding: number
   discount: number
   void_amount: number
@@ -64,21 +66,29 @@ export type PosDay = {
 // One summary per trading day between from and to (YYYY-MM-DD, inclusive).
 export async function posDays(from: string, to: string): Promise<PosDay[]> {
   const token = await accessToken()
-  const [bills, payments, taxes, orders, types, cash] = await Promise.all([
+  const [bills, payments, taxes, orders, types, cash, taxInfo] = await Promise.all([
     resource(token, 'Transaction', ['idTransaction', 'ReceiptDateEnd', 'ReceiptGrandTotal', 'Rounding', 'DiscountOnReceiptAmt', 'DiscountOnItemAmt', 'NoOfPax', 'Voided'], from, to),
     resource(token, 'TransactionPayment', ['TransactionID', 'PaymentTypeID', 'PaymentAmountWorth'], from, to),
-    resource(token, 'TransactionTax', ['TransactionID', 'TaxAmount'], from, to),
+    resource(token, 'TransactionTax', ['TransactionID', 'TaxID', 'TaxAmount'], from, to),
     resource(token, 'TransactionOrder', ['TransactionID', 'Quantity', 'TransPrice', 'Cost', 'Voided'], from, to),
     resource(token, 'PaymentType', ['idPaymentType', 'PaymentName']),
     resource(token, 'PayInOut', ['Amount', 'Date'], from, to),
+    resource(token, 'TaxInfo', ['idTaxInfo', 'TaxName', 'TaxAmt']),
   ])
 
   const typeName = new Map(types.map(t => [String(t.idPaymentType), String(t.PaymentName ?? 'Other')]))
+  // Each tax line points at a TaxInfo row. The outlet charges a 10% service charge and
+  // 6% SST; go by the name first, then by the rate.
+  const isServiceCharge = new Map(taxInfo.map(t => {
+    const name = String(t.TaxName ?? '').toUpperCase()
+    const service = /SERVICE|\bSC\b|S\/C/.test(name) || (!/SST|GST|TAX/.test(name) && n(t.TaxAmt) === 10)
+    return [String(t.idTaxInfo), service] as const
+  }))
   const days = new Map<string, PosDay>()
   const dayOf = new Map<string, string>()
   const voidedBill = new Set<string>()
   const day = (date: string) => {
-    if (!days.has(date)) days.set(date, { date, receipts: 0, pax: 0, grand_total: 0, tax: 0, rounding: 0, discount: 0, void_amount: 0, cost: 0, pay_in: 0, pay_out: 0, payments: {} })
+    if (!days.has(date)) days.set(date, { date, receipts: 0, pax: 0, grand_total: 0, tax: 0, service_charge: 0, sst: 0, rounding: 0, discount: 0, void_amount: 0, cost: 0, pay_in: 0, pay_out: 0, payments: {} })
     return days.get(date) as PosDay
   }
 
@@ -110,7 +120,11 @@ export async function posDays(from: string, to: string): Promise<PosDay[]> {
   for (const t of taxes) {
     const id = String(t.TransactionID)
     const date = dayOf.get(id)
-    if (date && !voidedBill.has(id)) day(date).tax += n(t.TaxAmount)
+    if (!date || voidedBill.has(id)) continue
+    const d = day(date)
+    d.tax += n(t.TaxAmount)
+    if (isServiceCharge.get(String(t.TaxID))) d.service_charge += n(t.TaxAmount)
+    else d.sst += n(t.TaxAmount)
   }
   for (const o of orders) {
     const id = String(o.TransactionID)
@@ -129,7 +143,7 @@ export async function posDays(from: string, to: string): Promise<PosDay[]> {
 
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map(d => ({
     ...d,
-    grand_total: round(d.grand_total), tax: round(d.tax), rounding: round(d.rounding), discount: round(d.discount),
+    grand_total: round(d.grand_total), tax: round(d.tax), service_charge: round(d.service_charge), sst: round(d.sst), rounding: round(d.rounding), discount: round(d.discount),
     void_amount: round(d.void_amount), cost: round(d.cost), pay_in: round(d.pay_in), pay_out: round(d.pay_out),
     payments: Object.fromEntries(Object.entries(d.payments).map(([k, v]) => [k, round(v)])),
   }))

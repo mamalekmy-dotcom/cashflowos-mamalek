@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   }
   try {
     const days = await posDays(from as string, to as string)
-    const sum = (key: 'grand_total' | 'tax' | 'rounding' | 'discount' | 'void_amount' | 'cost' | 'receipts' | 'pax') =>
+    const sum = (key: 'grand_total' | 'tax' | 'service_charge' | 'sst' | 'rounding' | 'discount' | 'void_amount' | 'cost' | 'receipts' | 'pax') =>
       Math.round(days.reduce((s, d) => s + d[key], 0) * 100) / 100
     const payments: Record<string, number> = {}
     for (const d of days) for (const [k, v] of Object.entries(d.payments)) payments[k] = Math.round(((payments[k] ?? 0) + v) * 100) / 100
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true, from, to, days: days.length, stored: stored ?? [],
       totals: {
-        grand_total: sum('grand_total'), tax: sum('tax'), rounding: sum('rounding'), discount: sum('discount'),
+        grand_total: sum('grand_total'), tax: sum('tax'), service_charge: sum('service_charge'), sst: sum('sst'), rounding: sum('rounding'), discount: sum('discount'),
         void_amount: sum('void_amount'), cost: sum('cost'), receipts: sum('receipts'), pax: sum('pax'), payments,
       },
       byDay: days,

@@ -1,4 +1,4 @@
-import { getRecords, isCashReceived, latestMonthSales, rm } from '@/lib/records'
+import { getRecords, isCashReceived, rm, todayISO } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import Stat from '@/app/_components/Stat'
 import { DAILY_TILES, SALES_COLUMNS, changeText, type SalesValues } from '@/app/report/fields'
@@ -43,20 +43,47 @@ async function latestCosts() {
   return data
 }
 
-// Sales keyed into Daily Report for the latest month that has any. This is money
-// collected, so it includes tax and service charge, unlike POS net sales.
-async function keyedSales() {
+const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+
+type Takings = { nett: number; service: number; sst: number }
+const addUp = (rows: { net_sales: number; service_charge: number; sst: number }[]): Takings =>
+  rows.reduce((t, r) => ({ nett: t.nett + Number(r.net_sales), service: t.service + Number(r.service_charge), sst: t.sst + Number(r.sst) }), { nett: 0, service: 0, sst: 0 })
+
+// Yesterday and the month so far, from daily_sales (GeniusPOS each morning, or the X
+// Reading imports). Service charge and SST are what the POS actually charged.
+async function takings() {
   if (!supabaseConfigured) return null
-  const { data: latest } = await supabase.from('daily_reports').select('report_date').order('report_date', { ascending: false }).limit(1)
-  const lastDate = latest?.[0]?.report_date as string | undefined
-  if (!lastDate) return null
-  const month = lastDate.slice(0, 7)
-  const { data } = await supabase.from('daily_reports').select('cash, qr, card').gte('report_date', `${month}-01`).lte('report_date', lastDate)
-  const total = (data ?? []).reduce((sum, d) => sum + Number(d.cash) + Number(d.qr) + Number(d.card), 0)
-  return { month, lastDate, total }
+  const yesterday = dayBefore(todayISO())
+  const month = yesterday.slice(0, 7)
+  const [{ data }, { data: latest }] = await Promise.all([
+    supabase.from('daily_sales').select('sale_date, net_sales, service_charge, sst').gte('sale_date', `${month}-01`).lte('sale_date', yesterday),
+    supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1),
+  ])
+  const rows = data ?? []
+  const day = rows.find(r => r.sale_date === yesterday)
+  return {
+    yesterday, month, days: rows.length, lastDate: latest?.[0]?.sale_date as string | undefined,
+    day: day ? addUp([day]) : null,
+    monthToDate: addUp(rows),
+  }
 }
 
-const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+const shortDate = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+
+function TakingsRow({ label, t }: { label: string; t: Takings }) {
+  return (
+    <>
+      <p className="rowlabel">{label}</p>
+      <div className="grid">
+        <Stat label="Nett sales" value={rm(t.nett)} />
+        <Stat label="Service charge 10%" value={rm(t.service)} />
+        <Stat label="SST 6%" value={rm(t.sst)} />
+        <Stat label="Total sales" value={rm(t.nett + t.service + t.sst)} sub="Nett + service charge + SST" />
+      </div>
+    </>
+  )
+}
 
 // The latest report with figures in it, and the report from the calendar day before.
 async function latestReports() {
@@ -72,13 +99,12 @@ async function latestReports() {
 }
 
 export default async function Dashboard() {
-  const [rows, waiting, pos, keyed, leave, costs, reports] = await Promise.all([
-    getRecords(), proposedCount(), latestMonthSales(), keyedSales(), leaveWaiting(), latestCosts(), latestReports(),
+  const [rows, waiting, sales, leave, costs, reports] = await Promise.all([
+    getRecords(), proposedCount(), takings(), leaveWaiting(), latestCosts(), latestReports(),
   ])
-  // Keyed sales take over from the month they start. Until then the last POS month shows.
-  const sales = keyed && (!pos || keyed.month >= pos.month)
-    ? { label: `Sales collected ${keyed.month}`, total: keyed.total, lastDate: keyed.lastDate }
-    : pos && { label: `Sales ${pos.month}`, total: pos.total, lastDate: pos.lastDate }
+  const monthName = sales
+    ? new Date(`${sales.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : ''
   const share = (amount: number) => `${((amount / Number(costs?.net_sales)) * 100).toFixed(1)}%`
   const totalCost = Number(costs?.cogs) + Number(costs?.labor) + Number(costs?.rent)
   const costMonth = costs
@@ -93,7 +119,7 @@ export default async function Dashboard() {
       <p className="cap">Costs, sales and what's waiting on you.</p>
 
       <p className="cap">
-        {sales ? `Sales logged up to ${sales.lastDate}.` : 'No sales logged yet.'}
+        {sales?.lastDate ? `Sales logged up to ${sales.lastDate}.` : 'No sales logged yet.'}
       </p>
 
       {/* Row 0 — costs as a share of net sales, last closed month */}
@@ -109,10 +135,19 @@ export default async function Dashboard() {
         </>
       ) : null}
 
-      {/* Row 1 — sales, plus what's waiting on an owner */}
-      <p className="rowlabel">Sales Overview</p>
+      {/* Rows 1 and 2 — yesterday, then the month so far: nett, service charge, SST, total */}
+      {sales ? (
+        <>
+          {sales.day
+            ? <TakingsRow label={`Sales Overview · Yesterday, ${shortDate(sales.yesterday)}`} t={sales.day} />
+            : <p className="rowlabel">Sales Overview · Yesterday, {shortDate(sales.yesterday)}: no sales logged</p>}
+          <TakingsRow label={`Sales Overview · ${monthName} so far (${sales.days} days)`} t={sales.monthToDate} />
+        </>
+      ) : null}
+
+      {/* Row 3 — what's waiting on an owner */}
+      <p className="rowlabel">Waiting on you</p>
       <div className="grid">
-        {sales ? <Stat label={sales.label} value={rm(sales.total)} href="/report" /> : null}
         <Stat label="Invoices paid" value={rm(cashIn)} />
         <Stat label="Pending leave approval" value={leave} yes={leave > 0} href="/hr/leave" />
         <Stat label="Approval" value={waiting} yes={waiting > 0} href="/approvals" />

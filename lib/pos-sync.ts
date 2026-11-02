@@ -29,6 +29,8 @@ export async function syncPosDays(from: string, to: string): Promise<{ written: 
       sale_date: d.date,
       // Matches the X Reading net sales: before discounts, without tax and rounding.
       net_sales: round(d.grand_total - d.tax + d.discount - d.rounding),
+      service_charge: d.service_charge,
+      sst: d.sst,
       discount: d.discount,
       voids: d.void_amount,
       receipts: d.receipts,
@@ -41,6 +43,11 @@ export async function syncPosDays(from: string, to: string): Promise<{ written: 
   if (rows.length) {
     const { error } = await supabase.from('daily_sales').upsert(rows, { onConflict: 'sale_date' })
     if (error) throw new Error(`Saving POS days failed: ${error.message}`)
+  }
+  // The X Reading imports carry no service charge or SST, so only those two are filled in.
+  for (const d of days.filter(x => keep.has(x.date))) {
+    const { error } = await supabase.from('daily_sales').update({ service_charge: d.service_charge, sst: d.sst }).eq('sale_date', d.date)
+    if (error) throw new Error(`Saving service charge for ${d.date} failed: ${error.message}`)
   }
   return { written: rows.map(r => r.sale_date), kept: [...keep].sort() }
 }

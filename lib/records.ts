@@ -106,6 +106,7 @@ export async function getPendingCount(): Promise<number> {
     .from('agent_actions')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'proposed')
+    .neq('agent_key', 'stock-draft')
     .gt('expires_at', new Date().toISOString())
   if (error) return 0
   return count ?? 0

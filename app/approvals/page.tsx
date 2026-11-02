@@ -46,6 +46,7 @@ async function getPending(): Promise<Pending[]> {
     .from('agent_actions')
     .select('id, agent_key, payload, proposed_at, expires_at')
     .eq('status', 'proposed')
+    .neq('agent_key', 'stock-draft') // a bill still waiting for answers in Telegram, not a decision
     .order('proposed_at', { ascending: false })
   if (error) {
     console.error('[CFO] could not read proposals:', error.message)

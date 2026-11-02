@@ -58,7 +58,10 @@ async function advance(draft: Draft, draftId?: number): Promise<void> {
   const today = todayISO()
   const ctx = await sheetContext(ymOf(bill.date || today))
 
-  // A cut-off photo has no name to remember a match against, so it can't be asked about.
+  // A handwritten cash bill often has no readable shop name. Ask anyway, and remember the
+  // answer against the first item, so the next "Baby Ice" bill with no name goes to ICE.
+  if (!bill.supplier && bill.lines[0]?.text) bill.supplier = `No name: ${bill.lines[0].text}`
+  // With no items either, there is nothing to remember a match against.
   if (!bill.supplier) {
     if (draftId) await closeDraft(draftId)
     await sendMessage(sender.chatId, `📷 I can't read the supplier name on that bill (${esc(bill.invoice || 'no invoice no.')}). Nothing was recorded. Please resend the whole bill.`)

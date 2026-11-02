@@ -13,6 +13,7 @@ async function proposedCount(): Promise<number> {
     .from('agent_actions')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'proposed')
+    .neq('agent_key', 'stock-draft')
   if (error) return 0
   return count ?? 0
 }

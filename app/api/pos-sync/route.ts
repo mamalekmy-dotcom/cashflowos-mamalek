@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/auth'
 import { posConfigured, posDays } from '@/lib/geniuspos'
+import { supabase } from '@/lib/supabase'
 
 // Owner-only check of what GeniusPOS returns for a date range. It saves nothing, so it
 // can be run as often as needed while the figures are being matched to the POS reports.
@@ -25,8 +26,12 @@ export async function GET(req: Request) {
       Math.round(days.reduce((s, d) => s + d[key], 0) * 100) / 100
     const payments: Record<string, number> = {}
     for (const d of days) for (const [k, v] of Object.entries(d.payments)) payments[k] = Math.round(((payments[k] ?? 0) + v) * 100) / 100
+    // What the X Reading imports already hold for these days, to line the two up.
+    const { data: stored } = await supabase.from('daily_sales')
+      .select('sale_date, net_sales, receipts, pax, cash, qr, card, discount, voids, source')
+      .gte('sale_date', from as string).lte('sale_date', to as string).order('sale_date')
     return NextResponse.json({
-      ok: true, from, to, days: days.length,
+      ok: true, from, to, days: days.length, stored: stored ?? [],
       totals: {
         grand_total: sum('grand_total'), tax: sum('tax'), rounding: sum('rounding'), discount: sum('discount'),
         void_amount: sum('void_amount'), cost: sum('cost'), receipts: sum('receipts'), pax: sum('pax'), payments,

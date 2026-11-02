@@ -272,6 +272,9 @@ export const EXECUTORS: Record<string, Executor> = {
   'log-cash-in': (p) => writeRecord('log-cash-in', p),
   'mark-paid': (p) => writeRecord('mark-paid', p),
   'lead-status': (p) => writeRecord('lead-status', p),
+  // Supplier bills to the stock sheet, and the price change a spike alert asks about.
+  'stock-receipt': (p) => import('@/lib/stock-pipeline').then(m => m.recordReceipt(p)),
+  'stock-price': (p) => import('@/lib/stock-pipeline').then(m => m.changePrice(p)),
   // The gallery agents — all DRAFT-only (a human sends).
   'overdue-invoice': (p) => draftOnly('overdue-invoice', p),
   'cold-lead': (p) => draftOnly('cold-lead', p),

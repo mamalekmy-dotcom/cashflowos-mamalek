@@ -1,0 +1,268 @@
+import 'server-only'
+import { randomUUID } from 'crypto'
+import { supabase } from './supabase'
+import { sendMessage, sendWithButtons, getFilePath, downloadFileBytes, type InlineKeyboard } from './telegram'
+import { propose, proposeAndNotify, claim, markExecuted, type ActionRow } from './actions'
+import { todayISO, rm } from './records'
+import {
+  NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessItems, billKey, ymOf, spikesIn, perUnit,
+  type Bill, type Context, type Spike,
+} from './stock-logic'
+import { sheetContext, addAlias, setPrice, writeReceipt } from './stock-sheet'
+
+// Telegram receipt to stock sheet. Nothing reaches the sheet until an owner taps Approve.
+
+type Sender = { chatId: number; approvalChat: number; name: string; fromId: unknown }
+type Draft = { bill: Bill; fileId: string; mime: string; sender: Sender; msg: any }
+
+const OTHERS = 'OTHERS'
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const shown = (iso: string) => iso.split('-').reverse().join('/')
+
+export function pickFile(msg: any): { fileId: string; mime: string } | null {
+  if (msg.photo?.length) return { fileId: msg.photo[msg.photo.length - 1].file_id, mime: 'image/jpeg' }
+  if (msg.document) return { fileId: msg.document.file_id, mime: (msg.document.mime_type || '').toLowerCase() }
+  return null
+}
+
+async function fileBase64(fileId: string): Promise<string | null> {
+  const info = await getFilePath(fileId)
+  if (!info) return null
+  const bytes = await downloadFileBytes(info.file_path)
+  return bytes ? bytes.toString('base64') : null
+}
+
+// Returns false when this isn't a supplier bill, so the caller can use the normal Vault path.
+export async function runStockPipeline(msg: any, sender: Sender): Promise<boolean> {
+  const file = pickFile(msg)
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!file || !apiKey) return false
+  const base64 = await fileBase64(file.fileId)
+  if (!base64) return false
+  const bill = await readBill(base64, file.mime, apiKey).catch(e => {
+    console.error('[CFO] bill read failed:', e)
+    return null
+  })
+  if (!bill || bill.type === 'other') return false
+  if (bill.type === 'statement') {
+    await sendMessage(sender.chatId, `📄 That's a statement of account from ${esc(bill.supplier)}, not a bill, so I recorded nothing.`)
+    return true
+  }
+  await advance({ bill, fileId: file.fileId, mime: file.mime, sender, msg: { chat: msg.chat, from: msg.from, photo: msg.photo, document: msg.document } })
+  return true
+}
+
+// Works through what's still unknown, one question at a time, then sends the Approve card.
+async function advance(draft: Draft, draftId?: number): Promise<void> {
+  const { bill, sender } = draft
+  const today = todayISO()
+  const ctx = await sheetContext(ymOf(bill.date || today))
+
+  // A cut-off photo has no name to remember a match against, so it can't be asked about.
+  if (!bill.supplier) {
+    if (draftId) await closeDraft(draftId)
+    await sendMessage(sender.chatId, `📷 I can't read the supplier name on that bill (${esc(bill.invoice || 'no invoice no.')}). Nothing was recorded. Please resend the whole bill.`)
+    return
+  }
+
+  const supplier = matchSupplier(ctx, bill.supplier)
+  if (!supplier) {
+    const id = draftId ?? (await saveDraft(draft))
+    if (id) await askSupplier(id, draft, ctx)
+    return
+  }
+
+  const lines = bill.lines.map(l => ({ ...l, item: matchItem(ctx, l.text) ?? '' }))
+  const missing = lines.findIndex(l => !l.item)
+  if (missing >= 0) {
+    const id = draftId ?? (await saveDraft(draft))
+    if (id) await askItem(id, draft, ctx, missing)
+    return
+  }
+
+  if (draftId) await closeDraft(draftId)
+  const key = billKey(supplier, bill)
+  if (ctx.log.some(l => l.key === key) || (await isPending(key))) {
+    await sendMessage(sender.chatId, `📁 Already done: ${esc(supplier)} ${esc(bill.invoice)}. I didn't add it twice.`)
+    return
+  }
+
+  const spikes = spikesIn(lines, ctx.log, bill.date)
+  const problems = billProblems(bill, today)
+  const text = card(supplier, bill, lines, spikes, problems, ctx)
+  const row = await proposeAndNotify({
+    agentKey: 'stock-receipt',
+    idempotencyKey: `stock:${key}:${randomUUID()}`,
+    payload: {
+      key, text, date: bill.date, supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
+      fileId: draft.fileId, mime: draft.mime, sentBy: sender.name,
+    },
+    chatId: sender.approvalChat,
+    text,
+  })
+  if (row && sender.approvalChat !== sender.chatId) {
+    await sendMessage(sender.chatId, `📨 Got it: ${esc(supplier)} ${rm(bill.total ?? 0)}. Sent to the owner to approve.`)
+  }
+}
+
+function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context): string {
+  const body = lines.map(l =>
+    l.item === NOT_STOCK
+      ? `• ${esc(l.text)}: not stock`
+      : `• ${esc(l.item)}: ${l.qty ?? '?'} ${esc(l.unit)} @ ${l.price?.toFixed(2) ?? '?'}`,
+  )
+  const parts = [
+    `🧾 <b>${esc(supplier)}</b> · ${bill.date ? shown(bill.date) : 'no date'} · ${esc(bill.invoice || 'no invoice no.')}`,
+    `Total <b>${rm(bill.total ?? 0)}</b>`,
+    ...body,
+  ]
+  if (spikes.length) {
+    parts.push('', ...spikes.map(s => {
+      const item = ctx.items.find(i => i.name === s.item)
+      return `🔺 ${esc(s.item)}: ${s.base.toFixed(2)} → <b>${s.price.toFixed(2)}</b> (+${s.percent}%)${perUnit(item, s.price)}`
+    }))
+  }
+  if (problems.length) parts.push('', ...problems.map(p => `⚠️ ${esc(p)}`))
+  parts.push('', 'Approve to record in the stock sheet?')
+  return parts.join('\n')
+}
+
+async function saveDraft(draft: Draft): Promise<number | null> {
+  const row = await propose({ agentKey: 'stock-draft', idempotencyKey: `stockdraft:${randomUUID()}`, payload: draft, expiresInH: 72 })
+  if (!row) await sendMessage(draft.sender.chatId, '⚠️ I could not hold that receipt for checking. Please send it again.')
+  return row?.id ?? null
+}
+
+async function closeDraft(id: number): Promise<void> {
+  const row = await claim(id, null, 'executing')
+  if (row) await markExecuted(id, { kind: 'stock_draft_done' })
+}
+
+async function isPending(key: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('agent_actions')
+    .select('id')
+    .eq('agent_key', 'stock-receipt')
+    .eq('status', 'proposed')
+    .eq('payload->>key', key)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1)
+  return Boolean(data?.length)
+}
+
+const rows = (buttons: InlineKeyboard[number]): InlineKeyboard => buttons.map(b => [b])
+
+async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void> {
+  const { bill, sender } = draft
+  const names = ctx.suppliers.map(s => s.name)
+  const guess = candidates(bill.supplier, names)
+  await sendWithButtons(
+    sender.approvalChat,
+    `🏷 New supplier on a bill: <b>${esc(bill.supplier || 'name not readable')}</b>, ${rm(bill.total ?? 0)}.\nWhich Purchase column is this?`,
+    rows([
+      ...guess.map((name, i) => ({ text: name.slice(0, 40), callback_data: `sms:${id}:${i}` })),
+      { text: 'OTHERS column', callback_data: `sms:${id}:o` },
+      { text: 'Not a stock purchase', callback_data: `sms:${id}:x` },
+      { text: '🛑 Cancel this bill', callback_data: `sms:${id}:c` },
+    ]),
+  )
+}
+
+async function askItem(id: number, draft: Draft, ctx: Context, index: number): Promise<void> {
+  const line = draft.bill.lines[index]
+  const names = ctx.items.map(i => i.name)
+  let guess = candidates(line.text, names)
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!guess.length && apiKey) {
+    guess = await guessItems(line.text, names, apiKey).catch(e => {
+      console.error('[CFO] item guess failed:', e)
+      return []
+    })
+  }
+  await sendWithButtons(
+    draft.sender.approvalChat,
+    `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} @ ${line.price?.toFixed(2) ?? '?'}).\n` +
+      `Which stock row is it? If it isn't listed, tap Cancel, add it to the sheet, and resend.`,
+    rows([
+      ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
+      { text: 'Not a stock item', callback_data: `smi:${id}:${index}:x` },
+      { text: '🛑 Cancel this bill', callback_data: `smi:${id}:${index}:c` },
+    ]),
+  )
+}
+
+async function loadDraft(id: number): Promise<ActionRow | null> {
+  const { data } = await supabase.from('agent_actions').select('*').eq('id', id).eq('status', 'proposed').maybeSingle()
+  return (data as ActionRow) ?? null
+}
+
+// A tap on one of the question buttons. Returns the toast, and a draft to send down the
+// normal Vault path when the owner says a bill isn't a stock purchase.
+export async function answerStockQuestion(data: string): Promise<{ toast: string; notStock?: any }> {
+  const [verb, idStr, a, b] = data.split(':')
+  const id = Number(idStr)
+  const row = await loadDraft(id)
+  if (!row) return { toast: 'Already handled.' }
+  const draft = row.payload as Draft
+  const ctx = await sheetContext(ymOf(draft.bill.date || todayISO()))
+
+  if (verb === 'sms') {
+    if (a === 'x') {
+      await closeDraft(id)
+      return { toast: 'Not stock.', notStock: draft.msg }
+    }
+    if (a === 'c') {
+      await closeDraft(id)
+      await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
+      return { toast: 'Cancelled.' }
+    }
+    const target = a === 'o' ? OTHERS : candidates(draft.bill.supplier, ctx.suppliers.map(s => s.name))[Number(a)]
+    if (!target) return { toast: 'That choice has gone. Send the bill again.' }
+    await addAlias('supplier', draft.bill.supplier, target)
+  } else {
+    const line = draft.bill.lines[Number(a)]
+    if (!line) return { toast: 'Unknown line.' }
+    if (b === 'c') {
+      await closeDraft(id)
+      await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
+      return { toast: 'Cancelled.' }
+    }
+    const target = b === 'x' ? NOT_STOCK : ctx.items.find(i => `r${i.row}` === b)?.name
+    if (!target) return { toast: 'That choice has gone. Send the bill again.' }
+    await addAlias('item', line.text, target)
+  }
+  await advance(draft, id)
+  return { toast: 'Saved. I will remember this.' }
+}
+
+export async function recordReceipt(p: any) {
+  const base64 = p.fileId ? await fileBase64(p.fileId) : null
+  const res = await writeReceipt({
+    key: p.key, date: p.date, supplier: p.supplier, invoice: p.invoice, total: p.total, lines: p.lines, sentBy: p.sentBy,
+    photo: base64 ? { base64, mime: p.mime } : null,
+  })
+  if (res.duplicate) return { kind: 'stock_duplicate', supplier: p.supplier, invoice: p.invoice }
+
+  const owner = process.env.OWNER_CHAT_ID?.trim()
+  for (const s of (p.spikes ?? []) as Spike[]) {
+    if (!owner) break
+    const text =
+      `🔺 <b>Price up: ${esc(s.item)}</b>\n` +
+      `${esc(p.supplier)}, ${shown(p.date)}: ${s.base.toFixed(2)} → <b>${s.price.toFixed(2)}</b>${s.unit ? ` per ${esc(s.unit)}` : ''} (+${s.percent}%).\n` +
+      `Approve updates the price in the stock tab. Reject leaves it.`
+    await proposeAndNotify({
+      agentKey: 'stock-price',
+      idempotencyKey: `stockprice:${p.key}:${s.item}`,
+      payload: { text, ym: ymOf(p.date), item: s.item, price: s.price },
+      chatId: owner,
+      text,
+      expiresInH: 168,
+    })
+  }
+  return { kind: 'stock_receipt', supplier: p.supplier, total: p.total, wrote: res.wrote, link: res.link, photoSaved: Boolean(res.link) }
+}
+
+export async function changePrice(p: any) {
+  const res = await setPrice(p.ym, p.item, p.price)
+  return { kind: 'stock_price', item: p.item, from: res.old, to: p.price, tab: res.tab }
+}

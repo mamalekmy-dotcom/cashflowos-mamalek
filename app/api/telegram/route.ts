@@ -20,6 +20,8 @@ import { BOT_ACTION_TOOLS, ACTION_TOOL_NAMES, runBotAction } from '@/lib/bot-act
 import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
 import { logRun } from '@/lib/runs'
+import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
+import { runStockPipeline, answerStockQuestion } from '@/lib/stock-pipeline'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Telegram brain + hands. This ONE webhook does three jobs:
@@ -46,6 +48,12 @@ async function isAllowed(id: unknown): Promise<boolean> {
   if (linked) return linked.active
   return ALLOWED.includes(String(id))
 }
+
+// Staff who may send receipts and nothing else: no questions, no money answers.
+const RECEIPT_SENDERS = (process.env.RECEIPT_SENDER_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
 
 // Which groups the bot works in. FAIL CLOSED: a group that isn't listed gets silence,
 // so nobody can pull the bot into another chat and read the numbers there.
@@ -88,6 +96,7 @@ const threshold = () => {
 // Cost guard: how many vision reads one chat may trigger per day. Keeps a stuck
 // or spammy sender from burning your Anthropic credit. Resets each day (no cron).
 const VISION_DAILY_CAP = 20
+const BILL_DAILY_CAP = 60
 
 // What the Vault will actually read/file. Photos are always JPEG; documents carry
 // their own mime. Anything outside this list gets a friendly "can't read that".
@@ -103,7 +112,9 @@ const HELP_CARD =
   `✅ <b>Tasks</b> — "what's due this week?"\n` +
   `📣 <b>Content</b> — "what's scheduled?"\n` +
   `🤝 <b>People</b> — "who do I follow up with?" · "draft a follow-up for Angela"\n` +
-  `🚨 <b>Triage</b> — "what needs my attention today?"\n\n` +
+  `🚨 <b>Triage</b> — "what needs my attention today?"\n` +
+  `📦 <b>Stock</b> — send a supplier bill photo, tap ✅ Approve and I fill the stock sheet. ` +
+  `<code>/opening</code> after a stock count.\n\n` +
   `I can also <b>DO</b> things — "log RM45 Grab", "add task chase supplier Friday", ` +
   `"add lead Angela 8000", "mark ABC invoice paid", "move Koochester to appointment".\n` +
   `Small stuff I just do (reply <code>/undo-&lt;id&gt;</code> to reverse). Money stuff I propose ` +
@@ -183,6 +194,22 @@ async function handleCallback(cb: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
+  // The stock questions: which supplier or row a new line on a bill belongs to.
+  if (/^sm[si]:/.test(data)) {
+    await answerCallbackQuery(cbId, 'Saving…')
+    if (chatId && messageId) await editMessageReplyMarkup(chatId, messageId)
+    after(async () => {
+      try {
+        const res = await answerStockQuestion(data)
+        if (res.notStock) await runVaultPipeline(res.notStock)
+      } catch (e) {
+        console.error('[CFO] stock question failed:', e)
+        if (chatId) await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
+      }
+    })
+    return Response.json({ ok: true })
+  }
+
   const [verb, idStr] = data.split(':')
   const actionId = Number(idStr)
   if (!Number.isFinite(actionId) || (verb !== 'apr' && verb !== 'rej')) {
@@ -243,7 +270,9 @@ async function handleMessage(msg: any): Promise<Response> {
 
   // Allowlist on the sender — fail closed and stay silent, so anyone not on the list
   // gets no reply at all, not even a refusal.
-  if (!(await isAllowed(msg.from?.id))) return Response.json({ ok: true })
+  const allowed = await isAllowed(msg.from?.id)
+  const receiptOnly = !allowed && RECEIPT_SENDERS.includes(String(msg.from?.id))
+  if (!allowed && !(receiptOnly && (msg.photo || msg.document))) return Response.json({ ok: true })
 
   // Group rules. /id comes first because you need the id before the group can be
   // listed in TELEGRAM_TEAM_CHAT_IDS.
@@ -268,7 +297,7 @@ async function handleMessage(msg: any): Promise<Response> {
   // `next dev` and prod (waitUntil from @vercel/functions does not).
   if (msg.photo || msg.document) {
     after(() =>
-      runVaultPipeline(msg).catch(e => console.error('[CFO] vault pipeline threw:', e)),
+      fileIncoming(msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e)),
     )
     return Response.json({ ok: true })
   }
@@ -292,6 +321,21 @@ async function handleMessage(msg: any): Promise<Response> {
     }
     const res = await undoAction(Number(undoMatch[1]))
     await sendMessage(chatId, res.message)
+    return Response.json({ ok: true })
+  }
+
+  // /opening — after a stock count, bring last month's Closing into this month's Opening.
+  if (/^\/opening\b/i.test(text)) {
+    if (!(await isOwner(msg.from?.id))) {
+      await sendMessage(chatId, 'Only an owner can do that.')
+      return Response.json({ ok: true })
+    }
+    try {
+      const res = await syncOpening(todayISO().slice(0, 7))
+      await sendMessage(chatId, `✅ Opening updated: ${res.filled} items filled, ${res.blank} left blank because last month's Closing is empty.`)
+    } catch (e: any) {
+      await sendMessage(chatId, `⚠️ Couldn't update Opening: ${e?.message || e}`)
+    }
     return Response.json({ ok: true })
   }
 
@@ -527,6 +571,36 @@ async function answerWithTools(chatId: number, text: string, apiKey: string, fro
 // hang, never a throw that surfaces to the user. LATAR mapping: see
 // agents/vault/README.md.
 // ============================================================
+// Supplier bills go to the stock sheet. Anything else takes the normal Vault path.
+async function fileIncoming(msg: any, receiptOnly: boolean): Promise<void> {
+  const chatId = msg.chat?.id
+  if (stockConfigured()) {
+    const used = await bumpDailyCounter(chatId, 'bill', todayISO())
+    if (used > BILL_DAILY_CAP) {
+      await sendMessage(chatId, `📸 That's today's limit of ${BILL_DAILY_CAP} bills. It resets tomorrow.`)
+      return
+    }
+    try {
+      const sender = {
+        chatId,
+        approvalChat: await approvalChat(msg.from?.id, chatId),
+        name: msg.from?.first_name || String(msg.from?.id),
+        fromId: msg.from?.id,
+      }
+      if (await runStockPipeline(msg, sender)) return
+    } catch (e) {
+      console.error('[CFO] stock pipeline failed:', e)
+      await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
+      return
+    }
+  }
+  if (receiptOnly) {
+    await sendMessage(chatId, `📄 That doesn't look like a supplier bill, so I recorded nothing.`)
+    return
+  }
+  await runVaultPipeline(msg)
+}
+
 async function runVaultPipeline(msg: any): Promise<void> {
   const chatId = msg.chat?.id
 

@@ -4,6 +4,7 @@ import { sendMessage } from '@/lib/telegram'
 import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm, todayISO, type Rec } from '@/lib/records'
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
+import { ensureMonth, stockConfigured } from '@/lib/stock-sheet'
 import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -78,6 +79,20 @@ export async function GET(req: Request) {
   if (process.env.ANTHROPIC_API_KEY?.trim()) narrative = await chiefOfStaff(rows, today)
 
   const message = `${brief}${narrative ? `\n\n🐱 <b>Jarvis Oyen</b>\n${narrative}` : ''}`
+
+  // On the 1st, add this month's tabs to the stock sheet.
+  if (stockConfigured() && today.endsWith('-01')) {
+    const owner = process.env.OWNER_CHAT_ID?.trim()
+    try {
+      const res = await ensureMonth(today.slice(0, 7))
+      if (res.created && owner) {
+        await sendMessage(owner, `📅 New stock tabs ready: ${res.stock} and ${res.purchase}. When your stock count is done, send /opening.`)
+      }
+    } catch (e: any) {
+      console.error('[CFO] new month tabs failed:', e)
+      if (owner) await sendMessage(owner, `⚠️ I couldn't create this month's stock tabs: ${e?.message || e}`)
+    }
+  }
 
   // Send the brief.
   const to = recipients()

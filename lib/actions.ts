@@ -156,6 +156,11 @@ export function summarizeResult(result: any): string {
   if (result.kind === 'record_updated') {
     return `✅ Updated ${result.title} → ${result.status}${result.record_id ? ` (#${result.record_id})` : ''}`
   }
+  if (result.kind === 'stock_receipt') {
+    return `✅ Recorded ${result.supplier} ${rm(result.total)}: ${result.wrote} stock lines${result.photoSaved ? ' and the photo saved in Drive' : ''}.`
+  }
+  if (result.kind === 'stock_duplicate') return `📁 ${result.supplier} ${result.invoice} was already recorded, so I added nothing.`
+  if (result.kind === 'stock_price') return `✅ ${result.item} price changed from ${result.from} to ${result.to} in ${result.tab}.`
   return 'Done ✅'
 }
 

@@ -210,14 +210,16 @@ async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void
 async function askItem(id: number, draft: Draft, ctx: Context, index: number): Promise<void> {
   const line = draft.bill.lines[index]
   const names = ctx.items.map(i => i.name)
-  let guess = candidates(line.text, names)
+  // Word matches miss Malay names (BEBOLA AYAM is CHICKEN BALL), so the AI's picks
+  // always come first, with word matches after them.
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
-  if (!guess.length && apiKey) {
-    guess = await guessNames(line.text, names, apiKey, 'item').catch(e => {
+  const smart = apiKey
+    ? await guessNames(line.text, names, apiKey, 'item').catch(e => {
       console.error('[CFO] item guess failed:', e)
-      return []
+      return [] as string[]
     })
-  }
+    : []
+  const guess = [...new Set([...smart, ...candidates(line.text, names)])].slice(0, 6)
   await sendWithButtons(
     draft.sender.approvalChat,
     `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +

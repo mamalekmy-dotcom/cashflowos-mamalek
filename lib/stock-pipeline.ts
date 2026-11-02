@@ -8,12 +8,14 @@ import {
   NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
   type Bill, type Context, type Spike,
 } from './stock-logic'
-import { sheetContext, addAlias, setPrice, writeReceipt } from './stock-sheet'
+import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
 
-// Telegram receipt to stock sheet. Nothing reaches the sheet until an owner taps Approve.
+// Supplier bill to stock sheet, from Telegram or the app's Scan page. Nothing reaches
+// the sheet until an owner taps Approve.
 
 type Sender = { chatId: number; approvalChat: number; name: string; fromId: unknown }
-type Draft = { bill: Bill; fileId: string; mime: string; sender: Sender; msg: any }
+// A Telegram bill carries its fileId and message; a Scan bill its file in the vault bucket.
+type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any }
 
 const OTHERS = 'OTHERS'
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -52,8 +54,31 @@ export async function runStockPipeline(msg: any, sender: Sender): Promise<boolea
   return true
 }
 
+// A bill uploaded on the app's Scan page. The owner gets the same questions and Approve
+// card on Telegram as for a photo sent to the bot. Returns what the staff member sees.
+export async function runScanPipeline(args: {
+  bill: Bill; mime: string; storagePath: string; scanDocId: number; staffName: string
+}): Promise<string> {
+  const owner = Number(process.env.OWNER_CHAT_ID?.trim())
+  if (!owner) return 'Saved. An owner will check it in Doc Center.'
+  const sender: Sender = { chatId: owner, approvalChat: owner, name: args.staffName, fromId: null }
+  return advance({ bill: args.bill, storagePath: args.storagePath, scanDocId: args.scanDocId, mime: args.mime, sender })
+}
+
+// Reads a scanned file as a supplier bill. Null when it can't be read or isn't one.
+export async function readScannedBill(base64: string, mime: string): Promise<Bill | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+  if (!apiKey || !stockConfigured()) return null
+  const bill = await readBill(base64, mime, apiKey).catch(e => {
+    console.error('[CFO] scan bill read failed:', e)
+    return null
+  })
+  return bill?.type === 'bill' ? bill : null
+}
+
 // Works through what's still unknown, one question at a time, then sends the Approve card.
-async function advance(draft: Draft, draftId?: number): Promise<void> {
+// Returns a short status for whoever sent the bill.
+async function advance(draft: Draft, draftId?: number): Promise<string> {
   const { bill, sender } = draft
   const today = todayISO()
   const ctx = await sheetContext(ymOf(bill.date || today))
@@ -65,14 +90,14 @@ async function advance(draft: Draft, draftId?: number): Promise<void> {
   if (!bill.supplier) {
     if (draftId) await closeDraft(draftId)
     await sendMessage(sender.chatId, `📷 I can't read the supplier name on that bill (${esc(bill.invoice || 'no invoice no.')}). Nothing was recorded. Please resend the whole bill.`)
-    return
+    return "Couldn't read the bill. Please take the photo again, showing the whole bill."
   }
 
   const supplier = matchSupplier(ctx, bill.supplier)
   if (!supplier) {
     const id = draftId ?? (await saveDraft(draft))
     if (id) await askSupplier(id, draft, ctx)
-    return
+    return 'Waiting for the owner to check the supplier.'
   }
 
   const lines = bill.lines.map(l => ({ ...l, item: matchItem(ctx, l.text) ?? '' }))
@@ -80,25 +105,25 @@ async function advance(draft: Draft, draftId?: number): Promise<void> {
   if (missing >= 0) {
     const id = draftId ?? (await saveDraft(draft))
     if (id) await askItem(id, draft, ctx, missing)
-    return
+    return 'Waiting for the owner to match the items.'
   }
 
   if (draftId) await closeDraft(draftId)
   const key = billKey(supplier, bill)
   if (ctx.log.some(l => l.key === key) || (await isPending(key))) {
     await sendMessage(sender.chatId, `📁 Already done: ${esc(supplier)} ${esc(bill.invoice)}. I didn't add it twice.`)
-    return
+    return 'This bill was already sent in. Nothing was added twice.'
   }
 
   const spikes = spikesIn(lines, ctx.log, bill.date)
   const problems = billProblems(bill, today)
-  const text = card(supplier, bill, lines, spikes, problems, ctx)
+  const text = card(supplier, bill, lines, spikes, problems, ctx, draft)
   const row = await proposeAndNotify({
     agentKey: 'stock-receipt',
     idempotencyKey: `stock:${key}:${randomUUID()}`,
     payload: {
       key, text, date: bill.date, supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
-      fileId: draft.fileId, mime: draft.mime, sentBy: sender.name,
+      fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
     },
     chatId: sender.approvalChat,
     text,
@@ -106,17 +131,18 @@ async function advance(draft: Draft, draftId?: number): Promise<void> {
   if (row && sender.approvalChat !== sender.chatId) {
     await sendMessage(sender.chatId, `📨 Got it: ${esc(supplier)} ${rm(bill.total ?? 0)}. Sent to the owner to approve.`)
   }
+  return row ? 'Sent to the owner to approve.' : 'Could not send this to the owner. Please try again.'
 }
 
-function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context): string {
+function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context, draft: Draft): string {
   const body = lines.map(l =>
     l.item === NOT_STOCK
-      ? `• ${esc(l.text)}: not stock, RM${l.amount?.toFixed(2) ?? '?'}`
+      ? `• ${esc(l.text)}: Others, RM${l.amount?.toFixed(2) ?? '?'}`
       : `• ${esc(l.item)}: ${l.qty ?? '?'} ${esc(l.unit)} × RM${l.price?.toFixed(2) ?? '?'} = <b>RM${l.amount?.toFixed(2) ?? '?'}</b>`,
   )
   const parts = [
     `🧾 <b>${esc(supplier)}</b> · ${bill.date ? shown(bill.date) : 'no date'} · ${esc(bill.invoice || 'no invoice no.')}`,
-    `Total <b>${rm(bill.total ?? 0)}</b>`,
+    `Total <b>${rm(bill.total ?? 0)}</b>${draft.scanDocId ? ` · scanned by ${esc(draft.sender.name)}` : ''}`,
     ...body,
   ]
   if (spikes.length) {
@@ -195,11 +221,12 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
   await sendWithButtons(
     draft.sender.approvalChat,
     `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +
-      `Which stock row is it? If it isn't listed, tap Cancel, add it to the sheet, and resend.`,
+      `Which stock row is it? Not an ingredient: tap Others, it stays out of COGS but the money stays on the Purchase tab. ` +
+      `A new ingredient: tap Cancel, add it to the sheet, and resend.`,
     rows([
       ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
-      { text: 'Not a stock item', callback_data: `smi:${id}:${index}:x` },
-      { text: '🧾 Whole bill is not stock', callback_data: `smi:${id}:${index}:a` },
+      { text: 'Others (not COGS)', callback_data: `smi:${id}:${index}:x` },
+      { text: '🧾 Whole bill is Others', callback_data: `smi:${id}:${index}:a` },
       { text: '🛑 Cancel this bill', callback_data: `smi:${id}:${index}:c` },
     ]),
   )
@@ -223,7 +250,8 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
   if (verb === 'sms') {
     if (a === 'x') {
       await closeDraft(id)
-      return { toast: 'Not stock.', notStock: draft.msg }
+      // A scanned bill is already in Doc Center, so there's nothing more to file.
+      return draft.msg ? { toast: 'Not stock.', notStock: draft.msg } : { toast: 'Not stock. It stays in Doc Center.' }
     }
     if (a === 'c') {
       await closeDraft(id)
@@ -248,7 +276,7 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
       // Every line not matched yet is not stock, so the bill only goes to the Purchase tab.
       for (const l of draft.bill.lines) if (!matchItem(ctx, l.text)) await addAlias('item', l.text, NOT_STOCK)
       await advance(draft, id)
-      return { toast: 'Whole bill marked not stock.' }
+      return { toast: 'Whole bill marked Others.' }
     }
     const target = b === 'x' ? NOT_STOCK : ctx.items.find(i => `r${i.row}` === b)?.name
     if (!target) return { toast: 'That choice has gone. Send the bill again.' }
@@ -258,13 +286,30 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
   return { toast: 'Saved. I will remember this.' }
 }
 
+async function scanBase64(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from('vault').download(path)
+  if (error || !data) return null
+  return Buffer.from(await data.arrayBuffer()).toString('base64')
+}
+
 export async function recordReceipt(p: any) {
-  const base64 = p.fileId ? await fileBase64(p.fileId) : null
+  const base64 = p.fileId ? await fileBase64(p.fileId) : p.storagePath ? await scanBase64(p.storagePath) : null
   const res = await writeReceipt({
     key: p.key, date: p.date, supplier: p.supplier, invoice: p.invoice, total: p.total, lines: p.lines, sentBy: p.sentBy,
     photo: base64 ? { base64, mime: p.mime } : null,
   })
   if (res.duplicate) return { kind: 'stock_duplicate', supplier: p.supplier, invoice: p.invoice }
+
+  // The app's Stock and Suppliers pages read these. A monthly import of the workbook
+  // replaces the month, and the sheet holds the same bill, so nothing is counted twice.
+  const stockLines = (p.lines ?? []).filter((l: any) => l.item && l.item !== NOT_STOCK)
+  const saved = await Promise.all([
+    supabase.from('purchases').insert({ purchase_date: p.date, supplier: p.supplier, amount: Number(p.total) || 0 }),
+    stockLines.length
+      ? supabase.from('stock_daily').insert(stockLines.map((l: any) => ({ stock_date: p.date, item: l.item, qty: Number(l.qty) || 0, amount: Number(l.amount) || 0 })))
+      : Promise.resolve({ error: null }),
+  ])
+  for (const s of saved) if (s.error) console.error('[CFO] app stock copy failed:', s.error.message)
 
   const owner = process.env.OWNER_CHAT_ID?.trim()
   for (const s of (p.spikes ?? []) as Spike[]) {

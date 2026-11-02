@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { readImage } from '@/lib/vision'
+import { readScannedBill, runScanPipeline } from '@/lib/stock-pipeline'
 
 type Result = { ok: boolean; message: string }
 
@@ -13,7 +14,8 @@ const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/p
 const asDate = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null)
 
 // Anyone logged in can scan. Nothing reaches the P&L until an owner accepts it in
-// Doc Center. PDFs are stored without being read, so an owner types their details.
+// Doc Center, and nothing reaches the stock sheet until an owner taps Approve on
+// Telegram. A PDF that isn't a supplier bill is stored unread, for an owner to type up.
 export async function scanDocument(form: FormData): Promise<Result> {
   const user = await getCurrentUser()
   if (!user) return { ok: false, message: 'Please log in again.' }
@@ -26,6 +28,26 @@ export async function scanDocument(form: FormData): Promise<Result> {
   const path = `scans/${randomUUID()}`
   const { error: uploadError } = await supabase.storage.from('vault').upload(path, bytes, { contentType: file.type })
   if (uploadError) return { ok: false, message: 'Could not save the file. Try again.' }
+
+  // A supplier bill also goes to the owner on Telegram, item by item, for the stock sheet.
+  // It is still filed here, so Doc Center keeps every scan.
+  const bill = await readScannedBill(bytes.toString('base64'), file.type)
+  if (bill) {
+    const { data: doc, error } = await supabase.from('documents').insert({
+      kind: 'invoice',
+      merchant: bill.supplier || null,
+      doc_date: bill.date || null,
+      amount: bill.total,
+      storage_path: path,
+      mime: file.type,
+      created_by: user.id,
+    }).select('id').single()
+    if (error || !doc) return { ok: false, message: error?.message ?? 'Could not save the scan.' }
+    const status = await runScanPipeline({ bill, mime: file.type, storagePath: path, scanDocId: doc.id, staffName: user.name })
+    revalidatePath('/scan')
+    revalidatePath('/docs')
+    return { ok: true, message: `Read ${bill.supplier || 'the bill'}, ${bill.lines.length} items, RM ${bill.total ?? '?'}. ${status}` }
+  }
 
   const read = file.type.startsWith('image/') ? await readImage(bytes.toString('base64'), file.type) : null
   const { data: matched } = read?.merchant

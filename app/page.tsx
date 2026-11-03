@@ -2,6 +2,8 @@ import { getRecords, isCashReceived, rm, todayISO } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import Stat from '@/app/_components/Stat'
 import { DAILY_TILES, SALES_COLUMNS, changeText, type SalesValues } from '@/app/report/fields'
+import HealthStrip from '@/app/flr/HealthStrip'
+import { flrFor } from '@/lib/flr'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,8 +101,9 @@ async function latestReports() {
 }
 
 export default async function Dashboard() {
-  const [rows, waiting, sales, leave, costs, reports] = await Promise.all([
+  const [rows, waiting, sales, leave, costs, reports, flr] = await Promise.all([
     getRecords(), proposedCount(), takings(), leaveWaiting(), latestCosts(), latestReports(),
+    supabaseConfigured ? flrFor(todayISO().slice(0, 7), todayISO()) : null,
   ])
   const monthName = sales
     ? new Date(`${sales.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -142,6 +145,14 @@ export default async function Dashboard() {
             ? <TakingsRow label={`Sales Overview · Yesterday, ${shortDate(sales.yesterday)}`} t={sales.day} />
             : <p className="rowlabel">Sales Overview · Yesterday, {shortDate(sales.yesterday)}: no sales logged</p>}
           <TakingsRow label={`Sales Overview · ${monthName} so far (${sales.days} days)`} t={sales.monthToDate} />
+        </>
+      ) : null}
+
+      {/* FLR this month: green under 70%, red over. Opens the FLR Report. */}
+      {flr ? (
+        <>
+          <p className="rowlabel">FLR · {new Date(`${todayISO().slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })} so far</p>
+          <HealthStrip percent={flr.flrPercent} href="/flr" />
         </>
       ) : null}
 

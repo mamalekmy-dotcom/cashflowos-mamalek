@@ -100,6 +100,13 @@ code {
 .stat .s { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0; }
 .stat.yes { border-color: var(--clay); background: var(--clay-tint); }
 .stat.yes .v { color: var(--clay-deep); }
+/* FLR health strip: green under 70%, amber at 70%, red over. */
+.flr-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; max-width: 640px; margin: 14px 0 20px; padding: 12px 16px; border-radius: var(--r-13); color: #FFFDF9; font-size: 14px; }
+.flr-strip strong { font-size: 16px; }
+.flr-strip.healthy { background: var(--sage); }
+.flr-strip.border { background: var(--honey); }
+.flr-strip.unhealthy { background: var(--rust); }
+
 
 .tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-13); overflow: hidden; }
 .tbl th, .tbl td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); }

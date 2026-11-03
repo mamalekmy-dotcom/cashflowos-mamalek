@@ -32,6 +32,7 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
 export const GRANTABLE_TABS = [
   { href: '/', label: 'Dashboard' },
   { href: '/report', label: 'Daily Report' },
+  { href: '/flr', label: 'FLR Report' },
   { href: '/content', label: 'Content' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/approvals', label: 'Approvals' },

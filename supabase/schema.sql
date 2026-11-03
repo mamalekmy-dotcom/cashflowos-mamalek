@@ -430,6 +430,16 @@ create index if not exists daily_purchases_date_idx on daily_purchases (purchase
 -- The invoice photo in the vault bucket. app/report/actions.ts requires one.
 alter table daily_purchases add column if not exists photo_path text;
 
+-- Labour and rental for the FLR Report, keyed in once a month. A month with no row
+-- here falls back to monthly_pnl (TMS).
+create table if not exists monthly_costs (
+  month      text        primary key,
+  labour     numeric     not null default 0,
+  rent       numeric     not null default 0,
+  updated_by bigint      references app_users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
@@ -464,6 +474,7 @@ alter table daily_reports enable row level security;
 alter table daily_purchases enable row level security;
 alter table stock_items   enable row level security;
 alter table stock_daily   enable row level security;
+alter table monthly_costs enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

@@ -11,6 +11,7 @@ import { showsTab, type AccessUser } from '@/lib/access'
 const TABS: MoreTab[] = [
   { href: '/', label: 'Dashboard', ico: '🏠' },
   { href: '/report', label: 'Daily Report', ico: '📝' },
+  { href: '/flr', label: 'FLR Report', ico: '🍩' },
   { href: '/approvals', label: 'Approvals', ico: '🙋' },
   { href: '/content', label: 'Content', ico: '📣' },
   { href: '/tasks', label: 'Tasks', ico: '✅' },

@@ -13,6 +13,7 @@ const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) 
 
 type Sales = SalesValues & { report_date: string }
 type Bought = { id: number; purchase_date: string; supplier: string; amount: number; note: string | null; photo_path: string | null }
+type Bill = { id: number; date: string; supplier: string; invoice: string; amount: number; link: string; by: string }
 const collected = (s: Sales) => Number(s.cash) + Number(s.qr) + Number(s.card)
 
 // What the team keys in each day. It's kept apart from POS sales and Stock 2026, so a
@@ -24,20 +25,28 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
   const monthStart = `${day.slice(0, 7)}-01`
   const monthEnd = addDays(addDays(monthStart, 32).slice(0, 7) + '-01', -1)
 
-  const [{ data: sales }, { data: bought }, { data: pos }, { data: known }] = await Promise.all([
-    supabase.from('daily_reports').select(`report_date, ${SALES_COLUMNS}`).gte('report_date', monthStart).lte('report_date', monthEnd).order('report_date', { ascending: false }),
+  const [{ data: sales }, { data: bought }, { data: pos }, { data: known }, { data: approved }] = await Promise.all([
+    supabase.from('daily_reports').select(`report_date, ${SALES_COLUMNS}, updated_by`).gte('report_date', monthStart).lte('report_date', monthEnd).order('report_date', { ascending: false }),
     supabase.from('daily_purchases').select('id, purchase_date, supplier, amount, note, photo_path').gte('purchase_date', monthStart).lte('purchase_date', monthEnd).order('id'),
     supabase.from('daily_sales').select('cash, qr, card').eq('sale_date', day).maybeSingle(),
     supabase.from('purchases').select('supplier').gte('purchase_date', addDays(today, -SUPPLIER_DAYS)),
+    // Bills an owner approved on Telegram (sent to the bot or scanned), already in the stock sheet.
+    supabase.from('agent_actions').select('id, payload, result').eq('agent_key', 'stock-receipt').eq('status', 'executed')
+      .gte('payload->>date', monthStart).lte('payload->>date', monthEnd),
   ])
-  const month = (sales ?? []) as unknown as Sales[]
+  const month = (sales ?? []) as unknown as (Sales & { updated_by: number | null })[]
   const buys = (bought ?? []) as Bought[]
+  const bills: Bill[] = (approved ?? []).map(a => ({
+    id: a.id, date: a.payload.date, supplier: a.payload.supplier, invoice: a.payload.invoice ?? '',
+    amount: Number(a.payload.total) || 0, link: a.result?.link ?? '', by: a.payload.sentBy ?? '',
+  }))
   const saved = month.find(s => s.report_date === day) ?? null
   const dayBuys = buys.filter(b => b.purchase_date === day)
-  const add = (list: Bought[]) => list.reduce((sum, b) => sum + Number(b.amount), 0)
-  const boughtOn = (d: string) => add(buys.filter(b => b.purchase_date === d))
+  const dayBills = bills.filter(b => b.date === day)
+  const add = (list: { amount: number }[]) => list.reduce((sum, b) => sum + Number(b.amount), 0)
+  const boughtOn = (d: string) => add(buys.filter(b => b.purchase_date === d)) + add(bills.filter(b => b.date === d))
   const suppliers = [...new Set([...(known ?? []).map(k => k.supplier as string), ...buys.map(b => b.supplier)])].sort()
-  const days = [...new Set([...month.map(s => s.report_date), ...buys.map(b => b.purchase_date)])].sort().reverse()
+  const days = [...new Set([...month.map(s => s.report_date), ...buys.map(b => b.purchase_date), ...bills.map(b => b.date)])].sort().reverse()
 
   // Invoice photos are private, so each link only lasts an hour.
   const paths = dayBuys.map(b => b.photo_path).filter((p): p is string => !!p)
@@ -52,7 +61,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
   return (
     <>
       <h1 className="ph">Daily Report</h1>
-      <p className="cap">Key in the day&apos;s sales and purchasing.</p>
+      <p className="cap">Sales come from GeniusPOS each morning. Bills approved on Telegram show under purchasing; key in only what didn&apos;t go through the bot.</p>
 
       <div className="pulse-head">
         <Link className="btn ghost" href={`/report?day=${addDays(day, -1)}`} aria-label="Previous day">‹</Link>
@@ -64,10 +73,15 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
 
       <div className="grid">
         <Stat label="Sales collected" value={rm(saved ? collected(saved) : 0)} />
-        <Stat label="Purchasing" value={rm(add(dayBuys))} />
+        <Stat label="Purchasing" value={rm(add(dayBuys) + add(dayBills))} />
         <Stat label={`Sales, ${day.slice(0, 7)}`} value={rm(month.reduce((sum, s) => sum + collected(s), 0))} />
-        <Stat label={`Purchasing, ${day.slice(0, 7)}`} value={rm(add(buys))} />
+        <Stat label={`Purchasing, ${day.slice(0, 7)}`} value={rm(add(buys) + add(bills))} />
       </div>
+      {saved ? (
+        <p className="cap" style={{ marginBottom: 16 }}>
+          {saved.updated_by == null ? 'Sales for this day were saved from GeniusPOS.' : 'Sales for this day were keyed in by hand.'}
+        </p>
+      ) : null}
 
       {gap !== null ? (
         <p className={Math.abs(gap) >= 1 ? 'login-error' : 'cap'} style={{ marginBottom: 16 }}>
@@ -78,7 +92,25 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
       <SalesForm key={day} day={day} saved={saved} />
       <PurchaseForm key={`buy-${day}`} day={day} suppliers={suppliers} />
 
-      <p className="rowlabel" style={{ marginTop: 20 }}>Purchases on {day}</p>
+      <p className="rowlabel" style={{ marginTop: 20 }}>Bills approved on Telegram, {day}</p>
+      {dayBills.length ? (
+        <table className="tbl" style={{ marginBottom: 24 }}>
+          <thead><tr><th>Supplier</th><th>Invoice</th><th>Amount</th><th>Photo</th><th>Sent by</th></tr></thead>
+          <tbody>
+            {dayBills.map(b => (
+              <tr key={b.id}>
+                <td data-label="Supplier">{b.supplier}</td>
+                <td data-label="Invoice">{b.invoice}</td>
+                <td data-label="Amount">{rm(b.amount)}</td>
+                <td data-label="Photo">{b.link ? <a href={b.link} target="_blank" rel="noreferrer">Open</a> : 'None'}</td>
+                <td data-label="Sent by">{b.by}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : <p className="cap">None.</p>}
+
+      <p className="rowlabel" style={{ marginTop: 20 }}>Other purchases keyed in, {day}</p>
       {dayBuys.length ? (
         <table className="tbl" style={{ marginBottom: 24 }}>
           <thead><tr><th>Supplier</th><th>Note</th><th>Amount</th><th>Photo</th><th></th></tr></thead>

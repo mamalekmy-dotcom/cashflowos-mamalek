@@ -93,7 +93,8 @@ function Doughnut({ slices, centre, under, warn }: { slices: Slice[]; centre: st
       })}
       <text x="110" y="96" textAnchor="middle" fontSize="11" fill="var(--ink-soft)" letterSpacing="1">FLR</text>
       <text x="110" y="124" textAnchor="middle" fontSize="30" fontWeight="700" fill={warn ? 'var(--rust)' : 'var(--ink)'}>{centre}</text>
-      <text x="110" y="144" textAnchor="middle" fontSize="11" fill="var(--ink-soft)">{under}</text>
+      <text x="110" y="142" textAnchor="middle" fontSize="9" fill="var(--ink-soft)">of nett sales</text>
+      <text x="110" y="155" textAnchor="middle" fontSize="9" fill="var(--ink-soft)">{under}</text>
     </svg>
   )
 }
@@ -130,7 +131,7 @@ export default async function FlrReport({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="admin-card" style={{ maxWidth: 640 }}>
-        <Doughnut slices={sorted} centre={pct(flr)} under={`of ${rm(f.netSales)} nett sales`} warn={balance < 0} />
+        <Doughnut slices={sorted} centre={pct(flr)} under={rm(f.netSales)} warn={balance < 0} />
         <table className="tbl" style={{ marginTop: 16 }}>
           <thead><tr><th>Part</th><th>RM</th><th>% of nett sales</th></tr></thead>
           <tbody>

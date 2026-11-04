@@ -16,7 +16,8 @@ async function call<T>(action: string, body: Record<string, unknown> = {}): Prom
   return data as T
 }
 
-export const sheetContext = (ym: string) => call<Context>('context', { ym })
+// With a date, it also says what that day's Purchase row already holds.
+export const sheetContext = (ym: string, date?: string) => call<Context>('context', { ym, date })
 export const addAlias = (kind: 'item' | 'supplier', text: string, target: string) => call('addAlias', { kind, text, target })
 export const ensureMonth = (ym: string) => call<{ created: boolean; stock: string; purchase: string }>('ensureMonth', { ym })
 export const syncOpening = (ym: string) => call<{ filled: number; blank: number }>('syncOpening', { ym })

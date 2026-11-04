@@ -131,7 +131,19 @@ function context(req) {
     price: Number(r[8]) || 0,
     key: clean(r[13]),
   }))
-  return { items: readItems(stock), suppliers: readSuppliers(purchase), aliases, log }
+  const suppliers = readSuppliers(purchase)
+  return { items: readItems(stock), suppliers, aliases, log, filled: filledOn(purchase, suppliers, req.date) }
+}
+
+// What each Purchase column already holds on one date, so the bot can ask before
+// adding a bill that was also keyed in by hand.
+function filledOn(purchase, suppliers, date) {
+  if (!date) return []
+  const dates = purchase.getRange(PURCHASE_FIRST_ROW, 1, PURCHASE_LAST_ROW - PURCHASE_FIRST_ROW + 1, 1).getValues()
+  const at = dates.findIndex(r => r[0] instanceof Date && isoDate(r[0]) === date)
+  if (at < 0) return []
+  const row = purchase.getRange(PURCHASE_FIRST_ROW + at, 1, 1, purchase.getLastColumn()).getValues()[0]
+  return suppliers.map(s => ({ supplier: s.name, amount: Number(row[s.col - 1]) || 0 })).filter(f => f.amount)
 }
 
 function addAlias(req) {

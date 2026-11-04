@@ -81,7 +81,7 @@ export async function readScannedBill(base64: string, mime: string): Promise<Bil
 async function advance(draft: Draft, draftId?: number): Promise<string> {
   const { bill, sender } = draft
   const today = todayISO()
-  const ctx = await sheetContext(ymOf(bill.date || today))
+  const ctx = await sheetContext(ymOf(bill.date || today), bill.date || undefined)
 
   // A handwritten cash bill often has no readable shop name. Ask anyway, and remember the
   // answer against the first item, so the next "Baby Ice" bill with no name goes to ICE.
@@ -152,6 +152,13 @@ function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { it
     }))
   }
   if (problems.length) parts.push('', ...problems.map(p => `⚠️ ${esc(p)}`))
+  // Ice and gas bills are often keyed into the sheet by hand as well, so ask before adding.
+  const already = ctx.filled?.find(f => f.supplier === supplier && f.amount > 0)
+  if (already && bill.date) {
+    parts.push('', `❓ The sheet already has <b>${rm(already.amount)}</b> under ${esc(supplier)} on ${shown(bill.date)}, maybe keyed in by hand.`,
+      'Same bill? Tap Reject so it isn\'t counted twice. A second bill that day? Tap Approve.')
+    return parts.join('\n')
+  }
   parts.push('', 'Approve to record in the stock sheet?')
   return parts.join('\n')
 }

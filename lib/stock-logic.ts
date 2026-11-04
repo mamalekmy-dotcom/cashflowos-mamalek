@@ -20,7 +20,8 @@ export type Item = { row: number; name: string; volume: number | string; uom: st
 export type Supplier = { col: number; name: string }
 export type Alias = { kind: string; text: string; target: string }
 export type LogRow = { date: string; supplier: string; item: string; unit: string; price: number; key: string }
-export type Context = { items: Item[]; suppliers: Supplier[]; aliases: Alias[]; log: LogRow[] }
+// filled: what each Purchase column already holds on the bill's date, keyed by hand or not.
+export type Context = { items: Item[]; suppliers: Supplier[]; aliases: Alias[]; log: LogRow[]; filled?: { supplier: string; amount: number }[] }
 
 const SYSTEM =
   `You read supplier bills for a Malaysian restaurant. Return ONLY a JSON object, no prose:\n` +

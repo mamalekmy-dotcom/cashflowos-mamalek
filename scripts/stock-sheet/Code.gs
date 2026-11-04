@@ -1,6 +1,12 @@
-// Stock sheet writer. Paste this into the sheet: Extensions > Apps Script.
-// The Telegram bot posts here, so it only ever touches the sheet through these actions.
-// Script property BOT_SECRET must match STOCK_SCRIPT_SECRET in Vercel.
+// Stock sheet writer. The Telegram bot posts here, so it only ever touches the sheet
+// through these actions. Script property BOT_SECRET must match STOCK_SCRIPT_SECRET in Vercel.
+// It works on the sheet named by SHEET_ID, whichever file the script itself sits in.
+
+// "Copy of Stock 2026 Test or AI DASHBOARD" (Google Sheet). The bot writes bills here
+// and the COGS Report reads it. Change this one line to move to another sheet.
+const SHEET_ID = '1ByUebLuUYp8neYAZEhglIVVzi5__3Bc2Vm2w8EwwmUU'
+let openBook = null
+const book = () => openBook || (openBook = SpreadsheetApp.openById(SHEET_ID))
 
 const LOG_TAB = 'Receipt Log'
 const MATCH_TAB = 'Bot Matches'
@@ -37,11 +43,13 @@ function doPost(e) {
   }
 }
 
-// The real Stock 2026.xlsx in Drive, for the app's morning COGS refresh. Read only.
-const STOCK_FILE_ID = '1bVHMfyPZOJ8O5H3LsSaYokOGxc9Ras6p'
+// The sheet as an .xlsx, for the app's morning COGS refresh. Read only.
 function stockFile() {
-  const file = DriveApp.getFileById(STOCK_FILE_ID)
-  return { name: file.getName(), modified: file.getLastUpdated().toISOString(), data: Utilities.base64Encode(file.getBlob().getBytes()) }
+  const file = DriveApp.getFileById(SHEET_ID)
+  const xlsx = UrlFetchApp.fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`, {
+    headers: { Authorization: `Bearer ${ScriptApp.getOAuthToken()}` },
+  })
+  return { name: file.getName(), modified: file.getLastUpdated().toISOString(), data: Utilities.base64Encode(xlsx.getBlob().getBytes()) }
 }
 
 const tabsFor = ym => {
@@ -54,10 +62,10 @@ const prevYm = ym => {
 }
 const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
 const same = (a, b) => clean(a).toUpperCase() === clean(b).toUpperCase()
-const isoDate = d => Utilities.formatDate(d, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd')
+const isoDate = d => Utilities.formatDate(d, book().getSpreadsheetTimeZone(), 'yyyy-MM-dd')
 
 function tab(name, headers) {
-  const ss = SpreadsheetApp.getActive()
+  const ss = book()
   let sheet = ss.getSheetByName(name)
   if (!sheet) {
     sheet = ss.insertSheet(name, ss.getSheets().length)
@@ -96,7 +104,7 @@ function readSuppliers(sheet) {
 
 // Falls back to the newest existing tabs when the receipt's month has none yet.
 function latestTabs(ym) {
-  const ss = SpreadsheetApp.getActive()
+  const ss = book()
   let at = ym
   for (let i = 0; i < 24; i++) {
     const t = tabsFor(at)
@@ -136,7 +144,7 @@ function addAlias(req) {
 }
 
 function ensureMonth(req) {
-  const ss = SpreadsheetApp.getActive()
+  const ss = book()
   const t = tabsFor(req.ym)
   if (ss.getSheetByName(t.stock) && ss.getSheetByName(t.purchase)) return { created: false, stock: t.stock, purchase: t.purchase }
   const before = tabsFor(prevYm(req.ym))
@@ -168,7 +176,7 @@ function ensureMonth(req) {
 
 // After a stock count: bring last month's Closing into this month's Opening.
 function syncOpening(req) {
-  const ss = SpreadsheetApp.getActive()
+  const ss = book()
   const t = tabsFor(req.ym)
   const before = tabsFor(prevYm(req.ym))
   const stock = ss.getSheetByName(t.stock)
@@ -258,7 +266,7 @@ function writeReceipt(req) {
   if (!logOnly) {
     ensureMonth({ ym })
     const t = tabsFor(ym)
-    const ss = SpreadsheetApp.getActive()
+    const ss = book()
     const stock = ss.getSheetByName(t.stock)
     const purchase = ss.getSheetByName(t.purchase)
 
@@ -297,7 +305,7 @@ function writeReceipt(req) {
 
 function setPrice(req) {
   const t = tabsFor(req.ym)
-  const stock = SpreadsheetApp.getActive().getSheetByName(t.stock)
+  const stock = book().getSheetByName(t.stock)
   if (!stock) throw new Error(`No tab ${t.stock}`)
   const it = readItems(stock).find(x => same(x.name, req.item))
   if (!it) throw new Error(`Item not in ${t.stock}: ${req.item}`)

@@ -23,7 +23,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents)
     const secret = PropertiesService.getScriptProperties().getProperty('BOT_SECRET')
     if (!secret || req.secret !== secret) return out({ ok: false, error: 'forbidden' })
-    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening }[req.action]
+    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile }[req.action]
     if (!run) return out({ ok: false, error: 'unknown action' })
     const lock = LockService.getScriptLock()
     lock.waitLock(25000)
@@ -35,6 +35,13 @@ function doPost(e) {
   } catch (err) {
     return out({ ok: false, error: String(err && err.message || err) })
   }
+}
+
+// The real Stock 2026.xlsx in Drive, for the app's morning COGS refresh. Read only.
+const STOCK_FILE_ID = '1bVHMfyPZOJ8O5H3LsSaYokOGxc9Ras6p'
+function stockFile() {
+  const file = DriveApp.getFileById(STOCK_FILE_ID)
+  return { name: file.getName(), modified: file.getLastUpdated().toISOString(), data: Utilities.base64Encode(file.getBlob().getBytes()) }
 }
 
 const tabsFor = ym => {

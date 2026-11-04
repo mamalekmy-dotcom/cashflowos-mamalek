@@ -33,6 +33,7 @@ export const GRANTABLE_TABS = [
   { href: '/', label: 'Dashboard' },
   { href: '/report', label: 'Daily Report' },
   { href: '/flr', label: 'FLR Report' },
+  { href: '/cogs', label: 'COGS Report' },
   { href: '/content', label: 'Content' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/approvals', label: 'Approvals' },

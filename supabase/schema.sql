@@ -440,6 +440,14 @@ create table if not exists monthly_costs (
   updated_at timestamptz not null default now()
 );
 
+-- Months whose month-end stock count is done in Stock 2026. The COGS Report shows a
+-- month's COGS only once it is here.
+create table if not exists stock_closed (
+  month     text        primary key,
+  closed_by bigint      references app_users(id) on delete set null,
+  closed_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- Security: server-side only. Your Next.js server uses the SERVICE_ROLE key,
 -- which bypasses RLS. Enabling RLS with NO policies means anon/public gets
@@ -475,6 +483,7 @@ alter table daily_purchases enable row level security;
 alter table stock_items   enable row level security;
 alter table stock_daily   enable row level security;
 alter table monthly_costs enable row level security;
+alter table stock_closed  enable row level security;
 
 -- ------------------------------------------------------------
 -- Private storage bucket for uploaded photos/PDFs. public=false → the UI can only

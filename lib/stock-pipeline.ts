@@ -207,19 +207,38 @@ async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void
   )
 }
 
+// What this supplier's earlier approved bills were matched to, most often first. A gas
+// bill that only says "14kg" is still GAS TONG.
+async function boughtBefore(supplier: string, names: string[]): Promise<string[]> {
+  const { data } = await supabase.from('agent_actions').select('payload').eq('agent_key', 'stock-receipt').eq('status', 'executed')
+    .eq('payload->>supplier', supplier).order('id', { ascending: false }).limit(20)
+  const count = new Map<string, number>()
+  for (const row of data ?? []) {
+    for (const l of (row.payload?.lines ?? []) as { item?: string }[]) {
+      if (l.item && l.item !== NOT_STOCK && names.includes(l.item)) count.set(l.item, (count.get(l.item) ?? 0) + 1)
+    }
+  }
+  return [...count].sort((a, b) => b[1] - a[1]).map(([name]) => name).slice(0, 3)
+}
+
 async function askItem(id: number, draft: Draft, ctx: Context, index: number): Promise<void> {
   const line = draft.bill.lines[index]
   const names = ctx.items.map(i => i.name)
-  // Word matches miss Malay names (BEBOLA AYAM is CHICKEN BALL), so the AI's picks
-  // always come first, with word matches after them.
+  const supplier = matchSupplier(ctx, draft.bill.supplier) ?? draft.bill.supplier
+  // Word matches miss Malay names (BEBOLA AYAM is CHICKEN BALL), so the AI's picks come
+  // before word matches, and what this supplier usually sells comes before both. The AI
+  // is told the supplier too, since a line like "14kg" means nothing on its own.
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
-  const smart = apiKey
-    ? await guessNames(line.text, names, apiKey, 'item').catch(e => {
-      console.error('[CFO] item guess failed:', e)
-      return [] as string[]
-    })
-    : []
-  const guess = [...new Set([...smart, ...candidates(line.text, names)])].slice(0, 6)
+  const [usual, smart] = await Promise.all([
+    boughtBefore(supplier, names),
+    apiKey
+      ? guessNames(`${line.text} (on a bill from ${supplier})`, names, apiKey, 'item').catch(e => {
+        console.error('[CFO] item guess failed:', e)
+        return [] as string[]
+      })
+      : Promise.resolve([] as string[]),
+  ])
+  const guess = [...new Set([...usual, ...smart, ...candidates(line.text, names)])].slice(0, 6)
   await sendWithButtons(
     draft.sender.approvalChat,
     `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +

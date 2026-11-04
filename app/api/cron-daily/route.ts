@@ -25,7 +25,7 @@ import { JARVIS } from '@/jarvis/config'
 // ?preview guard on this executing path — soft guards are for read-only previews only.
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 // Who receives the brief: briefChatIds in jarvis/config.ts, or OWNER_CHAT_ID as the
 // default. None set = nobody (the brief just no-ops). Listing a group in
@@ -75,8 +75,6 @@ export async function GET(req: Request) {
     const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10)
     await syncPosDays(weekAgo, today).catch(e => console.error('[CFO] POS sync failed:', e))
   }
-  // Stock 2026 from Drive, so the COGS Report has this morning's figures.
-  if (stockConfigured()) await syncStockSheet().catch(e => console.error('[CFO] stock sheet sync failed:', e))
 
   const sales = await latestMonthSales()
   const salesLine = sales
@@ -153,6 +151,10 @@ export async function GET(req: Request) {
       if (row) created++
     }
   }
+
+  // Stock 2026 from Drive, so the COGS Report has this morning's figures. Last, because
+  // reading the workbook takes the best part of a minute and the brief mustn't wait on it.
+  if (stockConfigured()) await syncStockSheet().catch(e => console.error('[CFO] stock sheet sync failed:', e))
 
   return Response.json({
     ok: true,

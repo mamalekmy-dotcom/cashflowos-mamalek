@@ -6,6 +6,7 @@ import { ClosedButton, RefreshButton } from './Buttons'
 import CogsChart, { type ChartMonth } from './CogsChart'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300 // the refresh button reads the whole workbook
 
 const PAGE = 1000
 const SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

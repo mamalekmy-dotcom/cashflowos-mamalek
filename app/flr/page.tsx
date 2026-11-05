@@ -71,7 +71,7 @@ export default async function FlrReport({ searchParams }: { searchParams: Promis
         <Stat label="Balance after FLR" value={pct(balance)} sub={money(balance)} />
       </div>
 
-      <p className="cap">Food: {f.foodFrom}, ingredients only. Items sorted into Others, gas and packaging are left out.</p>
+      <p className="cap">Food: {f.foodFrom}. Items in the sheet&apos;s OTHERS section (gas, spoons) are left out.</p>
       <p className="cap">
         Labour {rm(f.fullLabour)} and rental {rm(f.fullRent)} for the month, {f.costsFrom}.
         {f.running ? ` Counted for ${f.daysSoFar} of ${daysIn(month)} days so far, to match the sales.` : ''}

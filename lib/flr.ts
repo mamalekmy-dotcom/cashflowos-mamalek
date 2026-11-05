@@ -19,20 +19,23 @@ export function flrHealth(percent: number): FlrHealth {
 }
 
 // Food, labour and rental against nett sales for one month.
-// Food: ingredient lines on bills approved on Telegram (items sorted into Others are
-// left out). A month from before the bot uses the food purchases in Stock 2026.
+// Food: once the month's stock count is marked done (COGS Report), its COGS: opening +
+// purchases − closing, OTHERS left out, the same figure as the COGS Report and the
+// Dashboard. Before that, ingredient lines on bills approved on Telegram (items sorted
+// into Others are left out), or with none of those, the food purchases in Stock 2026.
 // Labour and rental: keyed in on the FLR page; a month not keyed in uses the TMS report.
 export async function flrFor(month: string, today: string) {
   const from = `${month}-01`
   const to = `${month}-${String(daysIn(month)).padStart(2, '0')}`
-  const [{ data: sales }, { data: bills }, { data: stock }, { data: keyed }, { data: tms }, { data: items }] = await Promise.all([
+  const [{ data: sales }, { data: bills }, { data: stock }, { data: keyed }, { data: tms }, { data: items }, { data: counted }] = await Promise.all([
     supabase.from('daily_sales').select('sale_date, net_sales').gte('sale_date', from).lte('sale_date', to),
     supabase.from('agent_actions').select('payload').eq('agent_key', 'stock-receipt').eq('status', 'executed')
       .gte('payload->>date', from).lte('payload->>date', to),
-    supabase.from('stock_counts').select('section, bought_amount').eq('month', month),
+    supabase.from('stock_counts').select('section, opening_amount, bought_amount, closing_amount').eq('month', month),
     supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
     supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
     supabase.from('stock_items').select('name, section'),
+    supabase.from('stock_closed').select('month').eq('month', month).maybeSingle(),
   ])
 
   const days = sales ?? []
@@ -46,10 +49,14 @@ export async function flrFor(month: string, today: string) {
   const foodBills = foodLines.filter(lines => lines.length).length
   const billFood = foodLines.flat().reduce((s, l) => s + (Number(l.amount) || 0), 0)
   const sheetFood = (stock ?? []).filter(r => isFood(r.section)).reduce((s, r) => s + Number(r.bought_amount), 0)
-  const food = foodBills ? billFood : sheetFood
-  const foodFrom = foodBills
-    ? `${foodBills} bill${foodBills === 1 ? '' : 's'} approved on Telegram`
-    : sheetFood ? 'food purchases in Stock 2026' : 'no ingredient bills yet'
+  const cogs = (stock ?? []).filter(r => !/OTHERS/i.test(r.section))
+    .reduce((s, r) => s + Number(r.opening_amount) + Number(r.bought_amount) - Number(r.closing_amount), 0)
+  const food = counted ? cogs : foodBills ? billFood : sheetFood
+  const foodFrom = counted
+    ? 'COGS from the stock count (opening + purchases − closing)'
+    : foodBills
+      ? `${foodBills} bill${foodBills === 1 ? '' : 's'} approved on Telegram, ingredients only`
+      : sheetFood ? 'food purchases in Stock 2026' : 'no ingredient bills yet'
 
   const fullLabour = keyed ? Number(keyed.labour) : Number(tms?.labor ?? 0)
   const fullRent = keyed ? Number(keyed.rent) : Number(tms?.rent ?? 0)

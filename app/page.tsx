@@ -31,18 +31,38 @@ async function leaveWaiting(): Promise<number> {
   return count ?? 0
 }
 
-// The last month closed in the TMS report. Costs only exist once a month is closed,
-// so this is the last full month, not this one.
-async function latestCosts() {
+// The last month whose stock count is done (COGS Report), so this is the last full month,
+// not this one. Food is stock-based COGS (OTHERS left out, as on the COGS Report);
+// labour and rental are what's keyed on the FLR page, else the TMS report. With no
+// counted month yet, the TMS report alone.
+type Costs = { month: string; net_sales: number; cogs: number; labor: number; rent: number; costsKeyed: boolean }
+async function latestCosts(): Promise<Costs | null> {
   if (!supabaseConfigured) return null
-  const { data } = await supabase
-    .from('monthly_pnl')
-    .select('month, net_sales, cogs, labor, rent')
-    .gt('net_sales', 0)
-    .order('month', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data
+  const { data: closed } = await supabase.from('stock_closed').select('month').order('month', { ascending: false }).limit(1)
+  const month = closed?.[0]?.month as string | undefined
+  if (!month) {
+    const { data } = await supabase.from('monthly_pnl').select('month, net_sales, cogs, labor, rent')
+      .gt('net_sales', 0).order('month', { ascending: false }).limit(1).maybeSingle()
+    return data ? { ...data, costsKeyed: true } : null
+  }
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+  const [{ data: stock }, { data: sales }, { data: keyed }, { data: tms }] = await Promise.all([
+    supabase.from('stock_counts').select('section, opening_amount, bought_amount, closing_amount').eq('month', month),
+    supabase.from('daily_sales').select('net_sales').gte('sale_date', `${month}-01`).lte('sale_date', lastDay),
+    supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
+    supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
+  ])
+  const cogs = (stock ?? []).filter(r => !/OTHERS/i.test(r.section))
+    .reduce((s, r) => s + Number(r.opening_amount) + Number(r.bought_amount) - Number(r.closing_amount), 0)
+  const pos = (sales ?? []).reduce((s, r) => s + Number(r.net_sales), 0)
+  return {
+    month, cogs,
+    net_sales: pos || Number(tms?.net_sales ?? 0),
+    labor: keyed ? Number(keyed.labour) : Number(tms?.labor ?? 0),
+    rent: keyed ? Number(keyed.rent) : Number(tms?.rent ?? 0),
+    costsKeyed: Boolean(keyed || tms),
+  }
 }
 
 const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
@@ -131,8 +151,8 @@ export default async function Dashboard() {
           <p className="rowlabel">Costs · {costMonth} · % of net sales</p>
           <div className="grid">
             <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} />
-            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={rm(Number(costs.labor))} />
-            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={rm(Number(costs.rent))} />
+            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={costs.costsKeyed ? rm(Number(costs.labor)) : 'Not keyed in yet'} href="/flr" />
+            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={costs.costsKeyed ? rm(Number(costs.rent)) : 'Not keyed in yet'} href="/flr" />
             <Stat label="Total cost" value={share(totalCost)} sub={rm(totalCost)} />
           </div>
         </>

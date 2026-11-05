@@ -159,6 +159,11 @@ export function summarizeResult(result: any): string {
   if (result.kind === 'stock_receipt') {
     return `✅ Recorded ${result.supplier} ${rm(result.total)}: ${result.wrote} stock lines${result.photoSaved ? ' and the photo saved in Drive' : ''}.`
   }
+  if (result.kind === 'task_and_draft') {
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `✅ Added task: ${esc(result.title)}${result.record_id ? ` (#${result.record_id})` : ''}\n\n` +
+      `📝 Draft for ${esc(result.to || 'you')}. Copy and send it yourself, nothing was sent:\n\n${esc(result.text)}`
+  }
   if (result.kind === 'stock_duplicate') return `📁 ${result.supplier} ${result.invoice} was already recorded, so I added nothing.`
   if (result.kind === 'stock_price') return `✅ ${result.item} price changed from ${result.from} to ${result.to} in ${result.tab}.`
   return 'Done ✅'

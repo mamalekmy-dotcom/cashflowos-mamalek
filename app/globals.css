@@ -107,7 +107,6 @@ code {
 .flr-strip.border { background: var(--honey); }
 .flr-strip.unhealthy { background: var(--rust); }
 
-
 .tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-13); overflow: hidden; }
 .tbl th, .tbl td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); }
 .tbl th { color: var(--ink-soft); font-weight: 600; font-size: 12px; }
@@ -313,3 +312,56 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 
 /* ---- Two-row dashboard: money row lives in .grid; funnel above it ---- */
 .rowlabel { font-size: 13px; color: var(--ink-soft); font-weight: 600; margin: 0 0 10px; }
+
+/* ---- AI C Suite: the map (CsuiteMap.tsx) and the head cards ---- */
+.cs-stage { background: radial-gradient(ellipse at 50% 55%, var(--clay-tint), transparent 62%), var(--card); border: 1px solid var(--line); border-radius: var(--r-20); padding: 10px 10px 4px; margin-bottom: 22px; }
+.cs-svg { display: block; width: 100%; max-width: 820px; height: auto; margin: 0 auto; font-family: inherit; }
+.cs-svg text { text-anchor: middle; dominant-baseline: central; }
+.cs-link { fill: none; stroke: var(--line-2); stroke-width: 1.6; stroke-dasharray: 5 6; stroke-linecap: round; }
+.cs-link.live { stroke: rgba(217,119,87,.45); }
+.cs-link.hot { stroke: var(--clay); stroke-width: 2.4; animation: cs-flow 1s linear infinite; }
+@keyframes cs-flow { to { stroke-dashoffset: -22; } }
+.cs-dot.up { fill: var(--clay); }
+.cs-dot.down { fill: var(--sage); }
+.cs-dot.idle { fill: var(--ink-faint); opacity: .35; }
+.cs-you { fill: var(--ink); }
+.cs-you-t { fill: var(--paper); font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+.cs-jarvis { fill: var(--paper-2); stroke: var(--clay); stroke-width: 2.4; }
+.cs-head { fill: var(--card); stroke: var(--line-2); stroke-width: 1.6; }
+.cs-head.on { stroke: var(--sage); stroke-width: 2.4; }
+.cs-off { opacity: .55; }
+.cs-emoji { font-size: 26px; }
+.cs-emoji.big { font-size: 38px; }
+.cs-name { fill: var(--ink); font-size: 13px; font-weight: 700; }
+.cs-sub { fill: var(--ink-faint); font-size: 11px; }
+.cs-sub.live { fill: var(--sage); font-weight: 700; }
+.cs-svg.narrow .cs-name { font-size: 15px; }
+.cs-svg.narrow .cs-sub { font-size: 13px; }
+.cs-ring { fill: none; stroke: var(--sage); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: cs-ring 2.6s ease-out infinite; }
+.cs-ring.jarvis { stroke: var(--clay); animation-duration: 3.4s; }
+@keyframes cs-ring { from { transform: scale(1); opacity: .55; } to { transform: scale(1.5); opacity: 0; } }
+.cs-bubble { transform-box: fill-box; transform-origin: 50% 100%; animation: cs-pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
+.cs-bubble rect { fill: var(--card); stroke: var(--clay); stroke-width: 1.4; filter: drop-shadow(0 4px 10px rgba(33,28,22,.10)); }
+.cs-bubble text { fill: var(--ink); font-weight: 600; }
+.cs-bubble.sage rect { stroke: var(--sage); }
+.cs-bubble.dim rect { stroke: var(--line-2); }
+.cs-bubble.dim text { fill: var(--ink-soft); font-weight: 500; }
+@keyframes cs-pop { from { opacity: 0; transform: translateY(8px) scale(.92); } to { opacity: 1; transform: none; } }
+.cs-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: center; margin: 4px 0 8px; font-size: 12px; color: var(--ink-soft); }
+.cs-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.cs-key { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.cs-key.up { background: var(--clay); }
+.cs-key.down { background: var(--sage); }
+.cs-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-13); padding: 16px 18px; margin-bottom: 22px; }
+.cs-card.soon { margin-bottom: 0; background: var(--paper); }
+.cs-when { font-size: 12px; font-weight: 500; color: var(--ink-faint); margin-left: auto; }
+.cs-knobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 10px 0 16px; }
+.cs-knobs div { background: var(--paper-2); border-radius: var(--r-8); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--ink-soft); line-height: 1.4; }
+.cs-knobs b { color: var(--clay-deep); font-size: 12px; }
+.cs-top { margin-top: 16px; padding: 12px 14px; border-left: 3px solid var(--clay); background: var(--clay-tint); border-radius: var(--r-8); }
+.cs-top .rowlabel { margin-bottom: 4px; }
+.cs-top-t { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
+.cs-next { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 22px; }
+.cs-next .ac-role { margin-bottom: 4px; }
+.cs-never { font-size: 13px; color: var(--ink-soft); background: var(--paper-2); border-radius: var(--r-8); padding: 10px 14px; margin: 0; }
+@media (prefers-reduced-motion: reduce) { .cs-link.hot, .cs-ring, .cs-bubble { animation: none; } }

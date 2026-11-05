@@ -114,7 +114,7 @@ export async function GET(req: Request) {
   for (const agent of SCHEDULED) {
     let drafts: ProposalDraft[] = []
     try {
-      drafts = agent.check(rows, today)
+      drafts = await agent.check(rows, today)
     } catch (e) {
       console.error(`[CFO] scheduled check "${agent.key}" threw:`, e)
       continue

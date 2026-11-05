@@ -39,6 +39,12 @@ export const AGENTS: AgentMeta[] = [
     emoji: '🤖',
     autonomyNote: 'Read-only Q&A over your numbers on Telegram. Answers only — never acts on money.',
   },
+  {
+    key: 'finance-head',
+    label: 'Head of Finance',
+    emoji: '💰',
+    autonomyNote: '🟡 Daily 9am: watches sales, supplier spend, labour, food cost and buying. One recommendation a day; Approve adds a task + a draft. You send it.',
+  },
   // ---- Gallery placeholders (fill from agents/gallery/*.md; all DRAFT-only) ----
   {
     key: 'overdue-invoice',
@@ -260,6 +266,27 @@ async function draftOnly(agentKey: string, payload: any): Promise<any> {
   return result
 }
 
+// ---- taskAndDraft: the Head of Finance --------------------------------------
+// On a YES: adds the follow-up task, then hands back the draft for YOU to send.
+// Same writeRecord path as the bot's add-task, so /undo reverses the task.
+async function taskAndDraft(agentKey: string, payload: any): Promise<any> {
+  const task = await writeRecord(agentKey, {
+    op: 'insert',
+    category: 'task',
+    title: payload?.task?.title,
+    due_date: payload?.task?.due_date,
+    note: `From the Head of Finance: ${payload?.note || ''}`.trim(),
+    meta: { source: agentKey, alarm: payload?.alarm },
+  })
+  return {
+    ...task,
+    kind: 'task_and_draft' as const,
+    to: payload?.to || '',
+    text: (payload?.text || '').toString().trim(),
+    ready_to_send: false as const, // the robot never sends. You do.
+  }
+}
+
 export const EXECUTORS: Record<string, Executor> = {
   // The two that write money/docs (Vault = the photo pipeline, Expense = its
   // threshold specialisation). Both file into the ONE records table.
@@ -275,6 +302,8 @@ export const EXECUTORS: Record<string, Executor> = {
   // Supplier bills to the stock sheet, and the price change a spike alert asks about.
   'stock-receipt': (p) => import('@/lib/stock-pipeline').then(m => m.recordReceipt(p)),
   'stock-price': (p) => import('@/lib/stock-pipeline').then(m => m.changePrice(p)),
+  // AI C-Suite heads — a task + a draft, never a send.
+  'finance-head': (p) => taskAndDraft('finance-head', p),
   // The gallery agents — all DRAFT-only (a human sends).
   'overdue-invoice': (p) => draftOnly('overdue-invoice', p),
   'cold-lead': (p) => draftOnly('cold-lead', p),
@@ -306,7 +335,8 @@ export type ProposalDraft = { idempotencyKey: string; payload: any; text: string
 export type ScheduledCheck = {
   key: string
   label: string
-  check: (rows: Rec[], today: string) => ProposalDraft[]
+  // May return a Promise, for a head that reads tables beyond `records`.
+  check: (rows: Rec[], today: string) => ProposalDraft[] | Promise<ProposalDraft[]>
 }
 
 // Whole days between a due date and today (positive = overdue).
@@ -346,4 +376,13 @@ const overdueInvoiceCheck: ScheduledCheck = {
       }),
 }
 
-export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck]
+// Finance · Head of Finance (AI C-Suite head #1): the lines in
+// agents/finance-head/definition.ts, ONE proposal a day. Reads sales, purchases and
+// the P&L, so it loads them itself (lib/finance-head.ts).
+const financeHeadCheck: ScheduledCheck = {
+  key: 'finance-head',
+  label: 'Head of Finance',
+  check: (_rows, today) => import('@/lib/finance-head').then(m => m.financeCheck(today)),
+}
+
+export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck, financeHeadCheck]

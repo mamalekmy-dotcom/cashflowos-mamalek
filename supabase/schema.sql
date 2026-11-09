@@ -106,6 +106,7 @@ create table if not exists tg_albums (
   created_at     timestamptz not null default now()
 );
 alter table tg_albums enable row level security;
+alter table tg_albums add column if not exists from_id bigint, add column if not exists chat_id bigint;
 
 -- ------------------------------------------------------------
 -- 7) app_users — who can log in, and what they can reach. Passwords live in

@@ -73,6 +73,8 @@ function spokenToBot(msg: any, me: string | null): boolean {
 
 // How long an album photo with no caption waits for the captioned one in the same album.
 const ALBUM_WAIT_MS = 5000
+// How long after "@bot" on a photo that person's other albums still count as sent to the bot.
+const ALBUM_WINDOW_MS = 3 * 60_000
 
 // Approve, Reject and /undo are for active owners. OWNER_CHAT_ID still counts when
 // that id isn't linked to an account yet, so the bot can't lock its owner out.
@@ -287,16 +289,25 @@ async function handleMessage(msg: any): Promise<Response> {
       return Response.json({ ok: true })
     }
     if (!TEAM_GROUPS.includes(String(chatId))) return Response.json({ ok: true })
-    // An album's caption sits on its first photo only, so "@bot" on an album of bills
-    // covers every photo in it. The others wait a moment for the captioned one to land.
+    // An album's caption sits on its first photo only, and Telegram splits more than 10
+    // photos into several albums. So "@bot" on one photo covers every album that person
+    // sends in the next few minutes. The others wait a moment for the captioned one.
     const album = (msg.photo || msg.document) && msg.media_group_id ? String(msg.media_group_id) : null
+    const from = Number(msg.from?.id) || null
     if (spokenToBot(msg, me)) {
-      if (album) await supabase.from('tg_albums').upsert({ media_group_id: album }, { onConflict: 'media_group_id', ignoreDuplicates: true })
+      if (msg.photo || msg.document) {
+        await supabase.from('tg_albums').upsert(
+          { media_group_id: album ?? `msg:${chatId}:${msg.message_id}`, from_id: from, chat_id: chatId },
+          { onConflict: 'media_group_id', ignoreDuplicates: true },
+        )
+      }
     } else if (album) {
       after(async () => {
         await new Promise(r => setTimeout(r, ALBUM_WAIT_MS))
-        const { data } = await supabase.from('tg_albums').select('media_group_id').eq('media_group_id', album).maybeSingle()
-        if (data) await fileIncoming(msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
+        const since = new Date(Date.now() - ALBUM_WINDOW_MS).toISOString()
+        const { data } = await supabase.from('tg_albums').select('media_group_id')
+          .or(`media_group_id.eq."${album}",and(from_id.eq.${from},chat_id.eq.${chatId},created_at.gte."${since}")`).limit(1)
+        if (data?.length) await fileIncoming(msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
       })
       return Response.json({ ok: true })
     } else {

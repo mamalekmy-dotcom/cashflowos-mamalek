@@ -21,7 +21,7 @@ import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
 import { logRun } from '@/lib/runs'
 import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
-import { runStockPipeline, answerStockQuestion } from '@/lib/stock-pipeline'
+import { runStockPipeline, answerStockQuestion, useSheetPrices } from '@/lib/stock-pipeline'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Telegram brain + hands. This ONE webhook does three jobs:
@@ -211,6 +211,19 @@ async function handleCallback(cb: any): Promise<Response> {
         console.error('[CFO] stock question failed:', e)
         if (chatId) await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
       }
+    })
+    return Response.json({ ok: true })
+  }
+
+  // "Use sheet price" on a stock Approve card: fixes a misread price before approving.
+  if (/^ssp:\d+$/.test(data)) {
+    await answerCallbackQuery(cbId, 'Changing to the sheet price…')
+    after(async () => {
+      const note = await useSheetPrices(Number(data.slice(4))).catch(e => {
+        console.error('[CFO] sheet price fix failed:', e)
+        return 'Could not change it. Please try again.'
+      })
+      if (chatId) await sendMessage(chatId, `✏️ ${note}`)
     })
     return Response.json({ ok: true })
   }

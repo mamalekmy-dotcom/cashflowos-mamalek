@@ -142,6 +142,29 @@ export async function answerCallbackQuery(callbackId: string, text?: string) {
   }).catch(e => console.error('[CFO] answerCallbackQuery failed:', e))
 }
 
+// Rewrite an already-sent message and its buttons, e.g. an Approve card after a fix.
+// Never throws.
+export async function editMessageText(
+  chatId: string | number,
+  messageId: number,
+  text: string,
+  keyboard?: InlineKeyboard,
+) {
+  const url = api('editMessageText')
+  if (!url) return
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      parse_mode: 'HTML',
+      reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined,
+    }),
+  }).catch(e => console.error('[CFO] editMessageText failed:', e))
+}
+
 // Strip (or replace) the inline buttons on an already-sent message. Pass no
 // keyboard to remove them entirely — used after an action is decided so the same
 // message can't be tapped twice. UX only; the CAS claim is the real guarantee.

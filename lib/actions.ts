@@ -261,6 +261,13 @@ export async function attachNotify(
   if (error) console.error('[CFO] attachNotify failed:', error.message)
 }
 
+export const approveRow = (id: number): InlineKeyboard => [
+  [
+    { text: '✅ Approve', callback_data: `apr:${id}` },
+    { text: '❌ Reject', callback_data: `rej:${id}` },
+  ],
+]
+
 // ------------------------------------------------------------
 // proposeAndNotify() — the 🟡 ASK-FIRST wiring in one call: create the proposal,
 // send the Approve/Reject buttons to Telegram, and remember the message so either
@@ -273,15 +280,12 @@ export async function proposeAndNotify(args: {
   chatId: number | string
   text: string
   expiresInH?: number
+  // More buttons under Approve/Reject, built once the row's id is known.
+  extraRows?: (id: number) => InlineKeyboard
 }): Promise<ActionRow | null> {
   const row = await propose(args)
   if (!row) return null // duplicate — already proposed, don't send a second message
-  const keyboard: InlineKeyboard = [
-    [
-      { text: '✅ Approve', callback_data: `apr:${row.id}` },
-      { text: '❌ Reject', callback_data: `rej:${row.id}` },
-    ],
-  ]
+  const keyboard: InlineKeyboard = [...approveRow(row.id), ...(args.extraRows?.(row.id) ?? [])]
   const messageId = await sendWithButtons(args.chatId, args.text, keyboard)
   if (messageId != null) await attachNotify(row.id, args.chatId, messageId)
   return row

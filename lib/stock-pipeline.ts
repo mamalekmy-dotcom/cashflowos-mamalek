@@ -1,8 +1,8 @@
 import 'server-only'
 import { randomUUID } from 'crypto'
 import { supabase } from './supabase'
-import { sendMessage, sendWithButtons, getFilePath, downloadFileBytes, type InlineKeyboard } from './telegram'
-import { propose, proposeAndNotify, claim, markExecuted, type ActionRow } from './actions'
+import { sendMessage, sendWithButtons, editMessageText, getFilePath, downloadFileBytes, type InlineKeyboard } from './telegram'
+import { propose, proposeAndNotify, approveRow, claim, markExecuted, type ActionRow } from './actions'
 import { todayISO, rm } from './records'
 import {
   NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
@@ -127,20 +127,74 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   const spikes = spikesIn(lines, ctx.log, bill.date)
   const problems = billProblems(bill, today)
   const text = card(supplier, bill, lines, spikes, problems, ctx, draft)
+  const sheetPrices = offSheetPrice(lines, ctx)
   const row = await proposeAndNotify({
     agentKey: 'stock-receipt',
     idempotencyKey: `stock:${key}:${randomUUID()}`,
     payload: {
       key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
       fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
+      sheetPrices,
     },
     chatId: sender.approvalChat,
     text,
+    extraRows: id => sheetPriceRow(id, sheetPrices),
   })
   if (row && sender.approvalChat !== sender.chatId) {
     await sendMessage(sender.chatId, `📨 Got it: ${esc(supplier)} ${rm(bill.total ?? 0)}. Sent to the owner to approve.`)
   }
   return row ? 'Sent to the owner to approve.' : 'Could not send this to the owner. Please try again.'
+}
+
+// Handwritten cash bills get misread (28 read as 29). Lines whose price isn't the stock
+// sheet's price, with the sheet's price, for the "Use sheet price" button.
+function offSheetPrice(lines: (Bill['lines'][number] & { item: string })[], ctx: Context): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const l of lines) {
+    const sheet = Number(ctx.items.find(i => i.name === l.item)?.price)
+    if (l.item && l.item !== NOT_STOCK && sheet > 0 && l.price != null && Math.abs(l.price - sheet) > 0.005) out[l.item] = sheet
+  }
+  return out
+}
+
+function sheetPriceRow(id: number, prices: Record<string, number>): InlineKeyboard {
+  const items = Object.entries(prices)
+  if (!items.length) return []
+  const label = items.length === 1 ? `✏️ Use sheet price RM${items[0][1].toFixed(2)}` : `✏️ Use sheet prices (${items.length} items)`
+  return [[{ text: label, callback_data: `ssp:${id}` }]]
+}
+
+// The "Use sheet price" tap: each line that was off takes the sheet's price, the total
+// follows, and the Approve card is rewritten in place. Only while it's still waiting.
+export async function useSheetPrices(id: number): Promise<string> {
+  const { data: row } = await supabase.from('agent_actions').select('*')
+    .eq('id', id).eq('agent_key', 'stock-receipt').eq('status', 'proposed').maybeSingle()
+  if (!row) return 'This bill is already decided.'
+  const p = row.payload
+  const prices: Record<string, number> = p.sheetPrices ?? {}
+  if (!Object.keys(prices).length) return 'Nothing to change.'
+
+  let before = 0
+  let after = 0
+  const lines = (p.lines as (Bill['lines'][number] & { item: string })[]).map(l => {
+    const price = prices[l.item]
+    if (price == null) return l
+    const amount = Math.round((l.qty ?? 1) * price * 100) / 100
+    before += Number(l.amount) || 0
+    after += amount
+    return { ...l, price, amount }
+  })
+  const total = Math.round((Number(p.total) - before + after) * 100) / 100
+  const bill: Bill = { type: 'bill', supplier: p.printed ?? p.supplier, invoice: p.invoice ?? '', date: p.date, total, lines }
+  const ctx = await sheetContext(ymOf(p.date), p.date)
+  const spikes = spikesIn(lines, ctx.log, p.date)
+  const text = card(p.supplier, bill, lines, spikes, billProblems(bill, todayISO()), ctx, { scanDocId: p.scanDocId, sender: { name: p.sentBy } } as Draft)
+  const payload = { ...p, lines, total, spikes, text, key: billKey(p.supplier, bill), sheetPrices: {} }
+
+  const { data: saved } = await supabase.from('agent_actions').update({ payload }).eq('id', id).eq('status', 'proposed').select('id')
+  if (!saved?.length) return 'This bill is already decided.'
+  if (row.notify_chat_id && row.notify_message_id) await editMessageText(row.notify_chat_id, row.notify_message_id, text, approveRow(id))
+  return `Changed to the sheet price. Total now ${rm(total)}.`
 }
 
 function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context, draft: Draft): string {

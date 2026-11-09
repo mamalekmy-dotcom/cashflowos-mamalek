@@ -71,6 +71,9 @@ function spokenToBot(msg: any, me: string | null): boolean {
   return new RegExp(`@${me}\\b`, 'i').test(msg.text || msg.caption || '')
 }
 
+// How long an album photo with no caption waits for the captioned one in the same album.
+const ALBUM_WAIT_MS = 5000
+
 // Approve, Reject and /undo are for active owners. OWNER_CHAT_ID still counts when
 // that id isn't linked to an account yet, so the bot can't lock its owner out.
 const OWNER = (process.env.OWNER_CHAT_ID || '').trim()
@@ -283,7 +286,20 @@ async function handleMessage(msg: any): Promise<Response> {
       await sendMessage(chatId, `This group's ID: <code>${chatId}</code>`)
       return Response.json({ ok: true })
     }
-    if (!TEAM_GROUPS.includes(String(chatId)) || !spokenToBot(msg, me)) {
+    if (!TEAM_GROUPS.includes(String(chatId))) return Response.json({ ok: true })
+    // An album's caption sits on its first photo only, so "@bot" on an album of bills
+    // covers every photo in it. The others wait a moment for the captioned one to land.
+    const album = (msg.photo || msg.document) && msg.media_group_id ? String(msg.media_group_id) : null
+    if (spokenToBot(msg, me)) {
+      if (album) await supabase.from('tg_albums').upsert({ media_group_id: album }, { onConflict: 'media_group_id', ignoreDuplicates: true })
+    } else if (album) {
+      after(async () => {
+        await new Promise(r => setTimeout(r, ALBUM_WAIT_MS))
+        const { data } = await supabase.from('tg_albums').select('media_group_id').eq('media_group_id', album).maybeSingle()
+        if (data) await fileIncoming(msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
+      })
+      return Response.json({ ok: true })
+    } else {
       return Response.json({ ok: true })
     }
   }

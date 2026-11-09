@@ -99,6 +99,14 @@ create table if not exists tg_updates (
   received_at timestamptz not null default now()
 );
 
+-- Albums sent to a team group with "@bot" on them. Only the first photo of an album
+-- carries the caption, so the rest look it up here.
+create table if not exists tg_albums (
+  media_group_id text        primary key,
+  created_at     timestamptz not null default now()
+);
+alter table tg_albums enable row level security;
+
 -- ------------------------------------------------------------
 -- 7) app_users — who can log in, and what they can reach. Passwords live in
 --    Supabase Auth (auth_id links to it), never here. extra_tabs adds tabs on top

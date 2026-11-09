@@ -107,6 +107,7 @@ create table if not exists tg_albums (
 );
 alter table tg_albums enable row level security;
 alter table tg_albums add column if not exists from_id bigint, add column if not exists chat_id bigint;
+alter table tg_albums add column if not exists msg jsonb;   -- a file sent without @bot, held for a following "@bot"
 
 -- ------------------------------------------------------------
 -- 7) app_users — who can log in, and what they can reach. Passwords live in

@@ -313,14 +313,47 @@ async function handleMessage(msg: any): Promise<Response> {
           { media_group_id: album ?? `msg:${chatId}:${msg.message_id}`, from_id: from, chat_id: chatId },
           { onConflict: 'media_group_id', ignoreDuplicates: true },
         )
+      } else {
+        // "@bot" sent on its own (or as a reply) right after a file: read that file.
+        const left = (msg.text || '').replace(new RegExp(`@${me}\\b`, 'ig'), ' ').trim()
+        const replied = msg.reply_to_message
+        if (replied && (replied.photo || replied.document) && !replied.from?.is_bot) {
+          after(() => fileIncoming(replied, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e)))
+          return Response.json({ ok: true })
+        }
+        if (!left) {
+          const since = new Date(Date.now() - ALBUM_WINDOW_MS).toISOString()
+          const { data: waiting } = await supabase.from('tg_albums').select('media_group_id, msg')
+            .like('media_group_id', 'pend:%').eq('from_id', from).eq('chat_id', chatId)
+            .gte('created_at', since).not('msg', 'is', null).order('created_at')
+          if (waiting?.length) {
+            await supabase.from('tg_albums').delete().in('media_group_id', waiting.map(w => w.media_group_id))
+            after(async () => {
+              for (const w of waiting) await fileIncoming(w.msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
+            })
+          } else {
+            await sendMessage(chatId, 'Send the bill with @' + me + ' in the caption, or reply to the bill with @' + me + '.')
+          }
+          return Response.json({ ok: true })
+        }
       }
-    } else if (album) {
+    } else if (msg.photo || msg.document) {
+      // A file with no @bot: hold it a few minutes in case "@bot" follows on its own.
+      const park = () => supabase.from('tg_albums').upsert(
+        { media_group_id: `pend:${chatId}:${msg.message_id}`, from_id: from, chat_id: chatId, msg },
+        { onConflict: 'media_group_id', ignoreDuplicates: true },
+      )
+      if (!album) {
+        await park()
+        return Response.json({ ok: true })
+      }
       after(async () => {
         await new Promise(r => setTimeout(r, ALBUM_WAIT_MS))
         const since = new Date(Date.now() - ALBUM_WINDOW_MS).toISOString()
         const { data } = await supabase.from('tg_albums').select('media_group_id')
-          .or(`media_group_id.eq."${album}",and(from_id.eq.${from},chat_id.eq.${chatId},created_at.gte."${since}")`).limit(1)
+          .or(`media_group_id.eq."${album}",and(from_id.eq.${from},chat_id.eq.${chatId},created_at.gte."${since}",media_group_id.not.like."pend:*")`).limit(1)
         if (data?.length) await fileIncoming(msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
+        else await park()
       })
       return Response.json({ ok: true })
     } else {

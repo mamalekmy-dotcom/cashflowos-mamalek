@@ -100,7 +100,16 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return 'Waiting for the owner to check the supplier.'
   }
 
-  const lines = bill.lines.map(l => ({ ...l, item: matchItem(ctx, l.text) ?? '' }))
+  // A row the sheet counts one whole thing at a time (1 TONG, 1 BTL) takes that unit, so a
+  // gas bill that only says "14kg" reads 1 TONG. Packs (1000 PCS a carton) and rows by
+  // weight or volume keep the bill's unit.
+  const lines = bill.lines.map(l => {
+    const item = matchItem(ctx, l.text) ?? ''
+    const row = ctx.items.find(i => i.name === item)
+    const uom = String(row?.uom ?? '').toUpperCase()
+    const whole = row && Number(row.volume) === 1 && uom && !/^(G|GM|KG|ML|L)$/.test(uom)
+    return { ...l, item, unit: whole ? uom : l.unit }
+  })
   const missing = lines.findIndex(l => !l.item)
   if (missing >= 0) {
     const id = draftId ?? (await saveDraft(draft))

@@ -71,6 +71,10 @@ function spokenToBot(msg: any, me: string | null): boolean {
   return new RegExp(`@${me}\\b`, 'i').test(msg.text || msg.caption || '')
 }
 
+// The team group is for bills only (Eric, 10 Nov 2026): every photo and PDF there is
+// read without "@bot". Text still needs @bot or a reply. Set true to bring the tag back.
+const FILES_NEED_TAG = false
+
 // How long an album photo with no caption waits for the captioned one in the same album.
 const ALBUM_WAIT_MS = 5000
 // How long after "@bot" on a photo that person's other albums still count as sent to the bot.
@@ -307,7 +311,9 @@ async function handleMessage(msg: any): Promise<Response> {
     // sends in the next few minutes. The others wait a moment for the captioned one.
     const album = (msg.photo || msg.document) && msg.media_group_id ? String(msg.media_group_id) : null
     const from = Number(msg.from?.id) || null
-    if (spokenToBot(msg, me)) {
+    if (!FILES_NEED_TAG && (msg.photo || msg.document)) {
+      // The team group is for bills only, so every photo and PDF is read as one.
+    } else if (spokenToBot(msg, me)) {
       if (msg.photo || msg.document) {
         await supabase.from('tg_albums').upsert(
           { media_group_id: album ?? `msg:${chatId}:${msg.message_id}`, from_id: from, chat_id: chatId },
@@ -332,7 +338,9 @@ async function handleMessage(msg: any): Promise<Response> {
               for (const w of waiting) await fileIncoming(w.msg, receiptOnly).catch(e => console.error('[CFO] file pipeline threw:', e))
             })
           } else {
-            await sendMessage(chatId, 'Send the bill with @' + me + ' in the caption, or reply to the bill with @' + me + '.')
+            await sendMessage(chatId, FILES_NEED_TAG
+              ? 'Send the bill with @' + me + ' in the caption, or reply to the bill with @' + me + '.'
+              : 'Send the bill photo or PDF here and I will read it. No tag needed.')
           }
           return Response.json({ ok: true })
         }

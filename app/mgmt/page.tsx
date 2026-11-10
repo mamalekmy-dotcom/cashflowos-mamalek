@@ -2,11 +2,13 @@ import Link from 'next/link'
 import Stat from '@/app/_components/Stat'
 import { categories } from '@/lib/expenses'
 import { daysIn } from '@/lib/flr'
-import { mgmtFor } from '@/lib/mgmt'
+import { MGMT_SHEET_URL, mgmtFor } from '@/lib/mgmt'
 import { rm, todayISO } from '@/lib/records'
 import KeyInForm from './KeyInForm'
+import SheetButton from './SheetButton'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 const shiftMonth = (month: string, n: number) => {
   const [y, m] = month.split('-').map(Number)
@@ -32,6 +34,7 @@ export default async function ManagementReport({ searchParams }: { searchParams:
     <>
       <h1 className="ph">Management Report</h1>
       <p className="cap">Profit and loss for the month: nett sales, COGS and every expense.</p>
+      <SheetButton url={MGMT_SHEET_URL} />
 
       <div className="pulse-head">
         <Link className="btn ghost" href={`/mgmt?month=${shiftMonth(month, -1)}`} aria-label="Previous month">‹</Link>

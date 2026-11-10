@@ -29,7 +29,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents)
     const secret = PropertiesService.getScriptProperties().getProperty('BOT_SECRET')
     if (!secret || req.secret !== secret) return out({ ok: false, error: 'forbidden' })
-    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile }[req.action]
+    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport }[req.action]
     if (!run) return out({ ok: false, error: 'unknown action' })
     const lock = LockService.getScriptLock()
     lock.waitLock(25000)
@@ -41,6 +41,32 @@ function doPost(e) {
   } catch (err) {
     return out({ ok: false, error: String(err && err.message || err) })
   }
+}
+
+// "Mama Lek Management Report 2026": the app rewrites it every morning. A Summary tab
+// with one row a month, and one tab a month with every line.
+const MGMT_ID = '1BDY-rFBAPFcwB25nZhxqe88al0nKQ44mpS2AH0KJPfo'
+
+function mgmtReport(req) {
+  const ss = SpreadsheetApp.openById(MGMT_ID)
+  const write = (name, rows, money) => {
+    const tab = ss.getSheetByName(name) || ss.insertSheet(name)
+    tab.clear()
+    if (!rows.length) return tab
+    tab.getRange(1, 1, rows.length, rows[0].length).setValues(rows)
+    tab.getRange(1, 1, 1, rows[0].length).setFontWeight('bold')
+    if (money) tab.getRange(2, money, rows.length - 1, 1).setNumberFormat('#,##0.00')
+    tab.autoResizeColumns(1, rows[0].length)
+    return tab
+  }
+  const summary = write('Summary', req.summary, null)
+  if (req.summary.length > 1) summary.getRange(2, 2, req.summary.length - 1, 5).setNumberFormat('#,##0.00')
+  ss.setActiveSheet(summary)
+  ss.moveActiveSheet(1)
+  for (const m of req.months) write(m.month, m.rows, 2)
+  const blank = ss.getSheetByName('Sheet1')
+  if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank)
+  return { months: req.months.length, link: ss.getUrl() }
 }
 
 // The sheet as an .xlsx, for the app's morning COGS refresh. Read only.

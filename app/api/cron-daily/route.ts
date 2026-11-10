@@ -8,6 +8,7 @@ import { ensureMonth, stockConfigured } from '@/lib/stock-sheet'
 import { posConfigured } from '@/lib/geniuspos'
 import { syncPosDays } from '@/lib/pos-sync'
 import { syncStockSheet } from '@/lib/stock-import'
+import { pushMgmtSheet } from '@/lib/mgmt'
 import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -155,6 +156,8 @@ export async function GET(req: Request) {
   // Stock 2026 from Drive, so the COGS Report has this morning's figures. Last, because
   // reading the workbook takes the best part of a minute and the brief mustn't wait on it.
   if (stockConfigured()) await syncStockSheet().catch(e => console.error('[CFO] stock sheet sync failed:', e))
+  // Then the Management Report's Google Sheet, from the figures just refreshed.
+  if (stockConfigured()) await pushMgmtSheet(todayISO()).catch(e => console.error('[CFO] management sheet failed:', e))
 
   return Response.json({
     ok: true,

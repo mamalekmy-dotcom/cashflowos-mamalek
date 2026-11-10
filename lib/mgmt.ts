@@ -79,3 +79,42 @@ export async function mgmtFor(month: string, today: string) {
     fullLabour: f.fullLabour, fullRent: f.fullRent, costsFrom: f.costsFrom,
   }
 }
+
+export const MGMT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1BDY-rFBAPFcwB25nZhxqe88al0nKQ44mpS2AH0KJPfo/edit'
+const FIRST_MONTH = '2026-01'
+
+// Every month of the year so far, written to the Google Sheet. Run each morning.
+export async function pushMgmtSheet(today: string) {
+  const { writeMgmtSheet } = await import('./stock-sheet')
+  const months: string[] = []
+  for (let m = FIRST_MONTH; m <= today.slice(0, 7);) {
+    months.push(m)
+    const [y, mm] = m.split('-').map(Number)
+    m = new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 7)
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const pct = (n: number, of: number) => (of ? `${((n / of) * 100).toFixed(1)}%` : '')
+  const summary: (string | number)[][] = [['Month', 'Nett sales', 'COGS', 'Gross profit', 'Expenses', 'Net profit', 'Profit %', 'Source']]
+  const tabs: { month: string; rows: (string | number)[][] }[] = []
+  for (const month of months) {
+    const r = await mgmtFor(month, today)
+    const gross = r.netSales - r.cogs
+    summary.push([month, r2(r.netSales), r2(r.cogs), r2(gross), r2(r.expenses), r2(r.profit), pct(r.profit, r.netSales),
+      r.source === 'tms' ? 'TMS report' : r.running ? `App, ${r.daysSoFar} days so far` : 'App'])
+    tabs.push({
+      month,
+      rows: [
+        ['Line', 'RM', '% of nett sales'],
+        ['Nett sales', r2(r.netSales), '100%'],
+        ['COGS', r2(r.cogs), pct(r.cogs, r.netSales)],
+        ['Gross profit', r2(gross), pct(gross, r.netSales)],
+        ...r.lines.filter(l => Math.abs(l.amount) >= 0.005).map(l => [l.label, r2(l.amount), pct(l.amount, r.netSales)]),
+        ['Total expenses', r2(r.expenses), pct(r.expenses, r.netSales)],
+        [r.profit >= 0 ? 'Net profit' : 'Net loss', r2(r.profit), pct(r.profit, r.netSales)],
+        ...(r.bills.length ? [['', '', ''], ['Bills', '', 'Category'],
+          ...r.bills.sort((a, b) => a.day.localeCompare(b.day)).map(b => [`${b.day} ${b.title}`, r2(b.amount), b.expense || ''])] : []),
+      ],
+    })
+  }
+  return writeMgmtSheet({ summary, months: tabs })
+}

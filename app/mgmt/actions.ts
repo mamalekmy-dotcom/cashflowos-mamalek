@@ -40,3 +40,16 @@ export async function addCategory(name: string): Promise<Result> {
   revalidatePath('/mgmt')
   return { ok: true, message: `${cat.name} added.` }
 }
+
+// Rewrites the Google Sheet copy now, instead of waiting for the morning.
+export async function refreshSheet(): Promise<Result> {
+  if (!(await editor())) return { ok: false, message: 'You do not have access to this.' }
+  const { pushMgmtSheet } = await import('@/lib/mgmt')
+  const { todayISO } = await import('@/lib/records')
+  try {
+    const res = await pushMgmtSheet(todayISO())
+    return { ok: true, message: `Google Sheet updated: ${res.months} months.` }
+  } catch (e: any) {
+    return { ok: false, message: `Could not update the Google Sheet: ${e?.message || e}` }
+  }
+}

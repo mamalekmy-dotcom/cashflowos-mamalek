@@ -24,3 +24,6 @@ export const syncOpening = (ym: string) => call<{ filled: number; blank: number 
 export const setPrice = (ym: string, item: string, price: number) => call<{ old: number; tab: string }>('setPrice', { ym, item, price })
 export const writeReceipt = (receipt: Record<string, unknown>) =>
   call<{ duplicate: boolean; link: string; wrote: number }>('writeReceipt', receipt)
+// Rewrites the "Mama Lek Management Report 2026" Google Sheet (same Apps Script).
+export const writeMgmtSheet = (body: { summary: (string | number)[][]; months: { month: string; rows: (string | number)[][] }[] }) =>
+  call<{ months: number; link: string }>('mgmtReport', body)

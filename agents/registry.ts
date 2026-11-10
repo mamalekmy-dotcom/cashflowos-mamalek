@@ -141,6 +141,8 @@ async function fileReceipt(agentKey: string, payload: any): Promise<any> {
       meta: {
         merchant: merchant || undefined,
         category: payload?.category || undefined,
+        // The Management Report category an owner picked on Telegram.
+        expense: payload?.expense || undefined,
         auto_filed: !!payload?.auto,
         source: 'vault',
         sha256: payload?.sha256 || undefined,

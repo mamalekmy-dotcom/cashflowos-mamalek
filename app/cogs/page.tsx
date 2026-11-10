@@ -1,3 +1,4 @@
+import { inCogs } from '@/lib/cogs-rule'
 import Link from 'next/link'
 import Stat from '@/app/_components/Stat'
 import { rm, todayISO } from '@/lib/records'
@@ -11,15 +12,15 @@ export const maxDuration = 300 // the refresh button reads the whole workbook
 const PAGE = 1000
 const SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 // Food ingredients and takeaway packaging count. The sheet's OTHERS sections (gas, spoons) don't.
-const counts = (section: string) => !/OTHERS/i.test(section)
+const counts = inCogs
 
-type Count = { month: string; section: string; opening_amount: number; bought_amount: number; closing_amount: number }
+type Count = { month: string; section: string; item: string; opening_amount: number; bought_amount: number; closing_amount: number }
 
 // A year of stock rows runs past Supabase's 1,000-row reply, so read it a page at a time.
 async function stockRows(year: string): Promise<Count[]> {
   const rows: Count[] = []
   for (let page = 0; ; page++) {
-    const { data } = await supabase.from('stock_counts').select('month, section, opening_amount, bought_amount, closing_amount')
+    const { data } = await supabase.from('stock_counts').select('month, section, item, opening_amount, bought_amount, closing_amount')
       .gte('month', `${year}-01`).lte('month', `${year}-12`).order('id').range(page * PAGE, page * PAGE + PAGE - 1)
     rows.push(...((data ?? []) as Count[]))
     if ((data ?? []).length < PAGE) return rows
@@ -45,7 +46,7 @@ export default async function CogsReport({ searchParams }: { searchParams: Promi
 
   const months = SHORT.map((label, i) => {
     const month = `${year}-${String(i + 1).padStart(2, '0')}`
-    const rows = stock.filter(r => r.month === month && counts(r.section))
+    const rows = stock.filter(r => r.month === month && counts(r.section, r.item))
     const add = (k: keyof Omit<Count, 'month' | 'section'>) => rows.reduce((s, r) => s + Number(r[k]), 0)
     const opening = add('opening_amount'), purchases = add('bought_amount'), closing = add('closing_amount')
     const pos = (sales ?? []).filter(s => s.sale_date.startsWith(month)).reduce((s, r) => s + Number(r.net_sales), 0)
@@ -65,7 +66,7 @@ export default async function CogsReport({ searchParams }: { searchParams: Promi
   return (
     <>
       <h1 className="ph">COGS Report</h1>
-      <p className="cap">COGS = Opening stock + Purchases − Closing stock, from Stock 2026. Food ingredients and takeaway packaging; OTHERS (gas, spoons) left out. Updated from the sheet every morning.</p>
+      <p className="cap">COGS = Opening stock + Purchases − Closing stock, from Stock 2026. Food ingredients and takeaway packaging; gas counted; the rest of OTHERS (detergent, gloves) goes to the Management Report. Updated from the sheet every morning.</p>
 
       <div className="pulse-head">
         <Link className="btn ghost" href={`/cogs?year=${Number(year) - 1}`} aria-label="Previous year">‹</Link>

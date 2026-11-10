@@ -1,3 +1,4 @@
+import { inCogs } from './cogs-rule'
 import 'server-only'
 import { supabase } from './supabase'
 import { todayISO } from './records'
@@ -36,12 +37,12 @@ const nextMonth = (month: string) => {
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7)
 }
 
-// Each month's food cost % of POS sales before tax, and how it was reached. OTHERS and
-// PACKAGING aren't food. Months without a count borrow from the counted ones.
+// Each month's food cost % of POS sales before tax, and how it was reached. OTHERS other
+// than gas isn't food cost. Months without a count borrow from the counted ones.
 async function foodRates() {
   const [stock, sales] = await Promise.all([
-    readAll<{ month: string; section: string; opening_amount: number; bought_amount: number }>((a, b) =>
-      supabase.from('stock_counts').select('month, section, opening_amount, bought_amount').order('id').range(a, b)),
+    readAll<{ month: string; section: string; item: string; opening_amount: number; bought_amount: number }>((a, b) =>
+      supabase.from('stock_counts').select('month, section, item, opening_amount, bought_amount').order('id').range(a, b)),
     readAll<{ sale_date: string; net_sales: number }>((a, b) =>
       supabase.from('daily_sales').select('sale_date, net_sales').order('sale_date').range(a, b)),
   ])
@@ -49,7 +50,7 @@ async function foodRates() {
   const opening = new Map<string, number>()
   const bought = new Map<string, number>()
   for (const r of stock) {
-    if (/OTHERS|PACKAGING/i.test(r.section)) continue
+    if (!inCogs(r.section, r.item)) continue
     opening.set(r.month, (opening.get(r.month) ?? 0) + Number(r.opening_amount))
     bought.set(r.month, (bought.get(r.month) ?? 0) + Number(r.bought_amount))
   }

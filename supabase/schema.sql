@@ -506,3 +506,36 @@ insert into storage.buckets (id, name, public)
 values ('vault', 'vault', false)
 on conflict (id) do nothing;
 
+
+-- ------------------------------------------------------------
+-- Management Report. Every expense that isn't food cost sits under one category.
+-- Bills sent to the bot become `records` rows (cash_out) with meta.expense set to the
+-- category name. Fixed monthly costs with no bill are keyed in to monthly_expenses.
+-- Salaries and rental come from monthly_costs (FLR page).
+-- ------------------------------------------------------------
+create table if not exists expense_categories (
+  id         bigint generated always as identity primary key,
+  name       text        not null unique,
+  sort       integer     not null default 100,
+  created_at timestamptz not null default now()
+);
+alter table expense_categories enable row level security;
+
+create table if not exists monthly_expenses (
+  month       text        not null,
+  category_id bigint      not null references expense_categories(id) on delete cascade,
+  amount      numeric     not null default 0,
+  updated_by  bigint      references app_users(id) on delete set null,
+  updated_at  timestamptz not null default now(),
+  primary key (month, category_id)
+);
+alter table monthly_expenses enable row level security;
+
+insert into expense_categories (name, sort) values
+  ('Utilities', 10), ('WiFi Internet', 20), ('Dishwasher Rental', 30), ('Pest Control', 40),
+  ('Accounting Fee', 50), ('Bukku Accounting', 60), ('AI Subscription', 70),
+  ('Queueing System (Oneway SMS)', 80), ('Season Pass', 90), ('Bank Merchant Charges', 100),
+  ('Marketing Agency / Ads', 110), ('Repair & Maintenance', 120), ('Machinery', 130),
+  ('Vehicle Maintenance', 140), ('Cleaning & Supplies', 150), ('Transportation', 160),
+  ('Training Expenses', 170)
+on conflict (name) do nothing;

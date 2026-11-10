@@ -1,4 +1,5 @@
 import 'server-only'
+import { proposeExpense } from './expenses'
 import { randomUUID } from 'crypto'
 import type { Rec } from './records'
 import { rm, todayISO } from './records'
@@ -155,24 +156,15 @@ export async function runBotAction(name: string, input: any, ctx: BotActionCtx):
         note: 'Logged via Jarvis (typed, no photo)',
         idempotencyKey: randomUUID(),
       }
-      if (amount <= thresholdRM) {
-        const done = await runAutopilot('expense', { ...payload, auto: true })
-        if (!done) return JSON.stringify({ status: 'noop', message: 'That looked already handled — nothing double-filed.' })
-        return JSON.stringify({
-          status: 'filed', zone: 'green', record_id: done.row.id,
-          filed: `${rm(done.result.amount)} · ${done.result.category || 'expense'}${merchant ? ' · ' + merchant : ''}`,
-          undo: `/undo-${done.row.id}`,
-          tell_user: 'Filed automatically because it is at/under the auto-file limit. Offer the /undo id.',
-        })
-      }
-      const row = await proposeAndNotify({
-        agentKey: 'expense', idempotencyKey: payload.idempotencyKey, payload, chatId,
-        text: `🧾 Log expense <b>${rm(amount)}</b>${merchant ? ` · ${merchant}` : ''}? That is over your RM${thresholdRM} auto-file limit.`,
+      // Every expense waits for an owner to pick its Management Report category.
+      const id = await proposeExpense({
+        payload, chatId: Number(chatId),
+        text: `🧾 Log expense <b>${rm(amount)}</b>${merchant ? ` · ${merchant}` : ''}?`,
       })
       return JSON.stringify(
-        row
-          ? { status: 'proposed', zone: 'yellow', sent_buttons: true, tell_user: `Proposed a ${rm(amount)} expense — Approve/Reject buttons sent. Tell them to tap ✅.` }
-          : { status: 'noop', message: 'Already waiting on your YES for this one.' },
+        id
+          ? { status: 'proposed', sent_buttons: true, tell_user: `Sent ${rm(amount)} with category buttons. Tell them to tap the expense category to file it. Nothing is filed yet.` }
+          : { status: 'noop', message: 'Already waiting on a category for this one.' },
       )
     }
 

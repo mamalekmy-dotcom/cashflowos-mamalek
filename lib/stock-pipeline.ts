@@ -9,13 +9,15 @@ import {
   type Bill, type Context, type Spike,
 } from './stock-logic'
 import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
+import { categories, categoryKeyboard } from './expenses'
 
 // Supplier bill to stock sheet, from Telegram or the app's Scan page. Nothing reaches
 // the sheet until an owner taps Approve.
 
 type Sender = { chatId: number; approvalChat: number; name: string; fromId: unknown }
 // A Telegram bill carries its fileId and message; a Scan bill its file in the vault bucket.
-type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any }
+// `expense` is the Management Report category for the bill's Others lines, once picked.
+type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any; expense?: string }
 
 const OTHERS = 'OTHERS'
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -117,6 +119,14 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return 'Waiting for the owner to match the items.'
   }
 
+  // Lines that aren't stock go to the Management Report, so they need a category first.
+  const others = lines.filter(l => l.item === NOT_STOCK)
+  if (others.length && !draft.expense) {
+    const id = draftId ?? (await saveDraft(draft))
+    if (id) await askExpense(id, draft, others)
+    return 'Waiting for the owner to pick the expense category.'
+  }
+
   if (draftId) await closeDraft(draftId)
   const key = billKey(supplier, bill)
   if (ctx.log.some(l => l.key === key) || (await isPending(key))) {
@@ -134,7 +144,7 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     payload: {
       key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
       fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
-      sheetPrices,
+      sheetPrices, expense: draft.expense,
     },
     chatId: sender.approvalChat,
     text,
@@ -188,7 +198,7 @@ export async function useSheetPrices(id: number): Promise<string> {
   const bill: Bill = { type: 'bill', supplier: p.printed ?? p.supplier, invoice: p.invoice ?? '', date: p.date, total, lines }
   const ctx = await sheetContext(ymOf(p.date), p.date)
   const spikes = spikesIn(lines, ctx.log, p.date)
-  const text = card(p.supplier, bill, lines, spikes, billProblems(bill, todayISO()), ctx, { scanDocId: p.scanDocId, sender: { name: p.sentBy } } as Draft)
+  const text = card(p.supplier, bill, lines, spikes, billProblems(bill, todayISO()), ctx, { scanDocId: p.scanDocId, sender: { name: p.sentBy }, expense: p.expense } as Draft)
   const payload = { ...p, lines, total, spikes, text, key: billKey(p.supplier, bill), sheetPrices: {} }
 
   const { data: saved } = await supabase.from('agent_actions').update({ payload }).eq('id', id).eq('status', 'proposed').select('id')
@@ -200,7 +210,7 @@ export async function useSheetPrices(id: number): Promise<string> {
 function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { item: string })[], spikes: Spike[], problems: string[], ctx: Context, draft: Draft): string {
   const body = lines.map(l =>
     l.item === NOT_STOCK
-      ? `• ${esc(l.text)}: Others, RM${l.amount?.toFixed(2) ?? '?'}`
+      ? `• ${esc(l.text)}: Others${draft.expense ? ` → ${esc(draft.expense)}` : ''}, RM${l.amount?.toFixed(2) ?? '?'}`
       : `• ${esc(l.item)}: ${l.qty ?? '?'} ${esc(l.unit)} × RM${l.price?.toFixed(2) ?? '?'} = <b>RM${l.amount?.toFixed(2) ?? '?'}</b>`,
   )
   const parts = [
@@ -323,6 +333,29 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
   )
 }
 
+// The bill's lines that aren't stock: which Management Report expense are they?
+async function askExpense(id: number, draft: Draft, others: { text: string; amount?: number | null }[]): Promise<void> {
+  const sum = others.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const list = others.slice(0, 5).map(l => esc(l.text)).join(', ')
+  await sendWithButtons(
+    draft.sender.approvalChat,
+    `🧾 <b>${esc(draft.bill.supplier)}</b>: ${list}${others.length > 5 ? '…' : ''} = <b>${rm(sum)}</b> is not food cost.
+` +
+      `Which expense is it? It goes to the Management Report, and stays in the sheet's OTHERS column.`,
+    categoryKeyboard('sxc', id, await categories()),
+  )
+}
+
+// A category picked (tapped or typed) for a stock bill's Others lines.
+export async function answerStockCategory(id: number, name: string): Promise<{ toast: string }> {
+  const row = await loadDraft(id)
+  if (!row || row.agent_key !== 'stock-draft') return { toast: 'Already handled.' }
+  const draft = { ...(row.payload as Draft), expense: name }
+  await supabase.from('agent_actions').update({ payload: draft }).eq('id', id).eq('status', 'proposed')
+  await advance(draft, id)
+  return { toast: `Saved as ${name}.` }
+}
+
 async function loadDraft(id: number): Promise<ActionRow | null> {
   const { data } = await supabase.from('agent_actions').select('*').eq('id', id).eq('status', 'proposed').maybeSingle()
   return (data as ActionRow) ?? null
@@ -401,6 +434,18 @@ export async function recordReceipt(p: any) {
       : Promise.resolve({ error: null }),
   ])
   for (const s of saved) if (s.error) console.error('[CFO] app stock copy failed:', s.error.message)
+
+  // The Others lines are an expense for the Management Report.
+  const othersAmount = (p.lines ?? []).filter((l: any) => l.item === NOT_STOCK).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0)
+  if (othersAmount > 0) {
+    const { error } = await supabase.from('records').insert({
+      title: `${p.supplier} — ${p.expense || 'Others'}`,
+      status: 'filed', amount: Math.round(othersAmount * 100) / 100, category: 'cash_out', due_date: p.date || null,
+      notes: `Others lines on stock bill ${p.invoice || ''}`.trim(),
+      meta: { merchant: p.supplier, expense: p.expense || undefined, source: 'stock-others', key: p.key },
+    })
+    if (error) console.error('[CFO] others expense failed:', error.message)
+  }
 
   const owner = process.env.OWNER_CHAT_ID?.trim()
   for (const s of (p.spikes ?? []) as Spike[]) {

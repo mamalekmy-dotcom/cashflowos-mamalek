@@ -1,3 +1,4 @@
+import { inCogs } from './cogs-rule'
 import 'server-only'
 import type { Rec } from './records'
 import { rm, todayISO, getFunnel, isCashReceived, cashReceivedAt } from './records'
@@ -327,7 +328,7 @@ export async function runSalesTool(input: any): Promise<string> {
 
 // COGS comes from monthly_pnl (TMS) and from stock_counts + purchases (Stock 2026).
 // Closing stock is next month's opening, because the month's own closing column is
-// often unfilled. OTHERS and PACKAGING aren't food. Never throws.
+// often unfilled. OTHERS other than gas isn't food cost. Never throws.
 export async function runCogsTool(input: any): Promise<string> {
   try {
     let month: string | undefined = /^\d{4}-\d{2}$/.test(input?.month ?? '') ? input.month : undefined
@@ -339,11 +340,11 @@ export async function runCogsTool(input: any): Promise<string> {
 
     const [y, m] = month.split('-').map(Number)
     const nextMonth = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7)
-    const isFood = (r: { section: string }) => !/OTHERS|PACKAGING/i.test(r.section)
+    const isFood = (r: { section: string; item?: string }) => inCogs(r.section, r.item)
     const [tmsRes, stockRes, nextRes, buysRes, days] = await Promise.all([
       supabase.from('monthly_pnl').select('net_sales, cogs').eq('month', month).maybeSingle(),
-      supabase.from('stock_counts').select('section, opening_amount, bought_amount').eq('month', month),
-      supabase.from('stock_counts').select('section, opening_amount').eq('month', nextMonth),
+      supabase.from('stock_counts').select('section, item, opening_amount, bought_amount').eq('month', month),
+      supabase.from('stock_counts').select('section, item, opening_amount').eq('month', nextMonth),
       supabase.from('purchases').select('supplier, amount').gte('purchase_date', `${month}-01`).lte('purchase_date', monthEnd(month)),
       salesBetween(`${month}-01`, monthEnd(month)),
     ])

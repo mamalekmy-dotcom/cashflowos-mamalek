@@ -1,3 +1,4 @@
+import { inCogs } from '@/lib/cogs-rule'
 import { getRecords, isCashReceived, rm, todayISO } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import Stat from '@/app/_components/Stat'
@@ -48,12 +49,12 @@ async function latestCosts(): Promise<Costs | null> {
   const [y, m] = month.split('-').map(Number)
   const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
   const [{ data: stock }, { data: sales }, { data: keyed }, { data: tms }] = await Promise.all([
-    supabase.from('stock_counts').select('section, opening_amount, bought_amount, closing_amount').eq('month', month),
+    supabase.from('stock_counts').select('section, item, opening_amount, bought_amount, closing_amount').eq('month', month),
     supabase.from('daily_sales').select('net_sales').gte('sale_date', `${month}-01`).lte('sale_date', lastDay),
     supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
     supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
   ])
-  const cogs = (stock ?? []).filter(r => !/OTHERS/i.test(r.section))
+  const cogs = (stock ?? []).filter(r => inCogs(r.section, r.item))
     .reduce((s, r) => s + Number(r.opening_amount) + Number(r.bought_amount) - Number(r.closing_amount), 0)
   const pos = (sales ?? []).reduce((s, r) => s + Number(r.net_sales), 0)
   return {

@@ -21,7 +21,8 @@ import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
 import { logRun } from '@/lib/runs'
 import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
-import { runStockPipeline, answerStockQuestion, useSheetPrices } from '@/lib/stock-pipeline'
+import { runStockPipeline, answerStockQuestion, answerStockCategory, useSheetPrices } from '@/lib/stock-pipeline'
+import { categories, categoryNamed, fileWithCategory, proposeExpense, typePrompt, typedFor } from '@/lib/expenses'
 
 // 🔒 Don't edit — this keeps your robot safe.
 // The Telegram brain + hands. This ONE webhook does three jobs:
@@ -219,6 +220,38 @@ async function handleCallback(cb: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
+  // An expense category tapped: on a bill to file (xc), or for a stock bill's Others
+  // lines (sxc). The "t" forms ask for the category to be typed as a reply.
+  const cat = data.match(/^(s?xc)(t?):(\d+)(?::(\d+))?$/)
+  if (cat) {
+    const [, kind, typeIt, idStr, catStr] = cat
+    const id = Number(idStr)
+    if (typeIt) {
+      await answerCallbackQuery(cbId)
+      if (chatId) await sendMessage(chatId, typePrompt(kind === 'xc' ? 'expense' : 'bill', id))
+      return Response.json({ ok: true })
+    }
+    const name = (await categories()).find(c => c.id === Number(catStr))?.name
+    if (!name) {
+      await answerCallbackQuery(cbId, 'That category has gone.')
+      return Response.json({ ok: true })
+    }
+    await answerCallbackQuery(cbId, `${name}…`)
+    if (chatId && messageId) await editMessageReplyMarkup(chatId, messageId)
+    after(async () => {
+      try {
+        const note = kind === 'xc'
+          ? await fileWithCategory(id, name, Number(fromId) || null)
+          : (await answerStockCategory(id, name)).toast
+        if (chatId) await sendMessage(chatId, note)
+      } catch (e) {
+        console.error('[CFO] expense category failed:', e)
+        if (chatId) await sendMessage(chatId, '⚠️ Could not save that. Please tap again.')
+      }
+    })
+    return Response.json({ ok: true })
+  }
+
   // "Use sheet price" on a stock Approve card: fixes a misread price before approving.
   if (/^ssp:\d+$/.test(data)) {
     await answerCallbackQuery(cbId, 'Changing to the sheet price…')
@@ -402,6 +435,27 @@ async function handleMessage(msg: any): Promise<Response> {
     }
     const res = await undoAction(Number(undoMatch[1]))
     await sendMessage(chatId, res.message)
+    return Response.json({ ok: true })
+  }
+
+  // A typed expense category, sent as a reply to the bot's "Reply to this message" prompt.
+  const typed = msg.reply_to_message?.from?.is_bot ? typedFor(msg.reply_to_message.text || '') : null
+  if (typed) {
+    if (!(await isOwner(msg.from?.id))) {
+      await sendMessage(chatId, 'Only an owner can pick the category.')
+      return Response.json({ ok: true })
+    }
+    const cat = await categoryNamed(text)
+    if (!cat) {
+      await sendMessage(chatId, 'Type the category name, for example "Gas cylinder deposit".')
+      return Response.json({ ok: true })
+    }
+    after(async () => {
+      const note = typed.kind === 'expense'
+        ? await fileWithCategory(typed.id, cat.name, Number(msg.from?.id) || null)
+        : (await answerStockCategory(typed.id, cat.name)).toast
+      await sendMessage(chatId, note)
+    })
     return Response.json({ ok: true })
   }
 
@@ -791,22 +845,13 @@ async function runVaultPipeline(msg: any): Promise<void> {
     idempotencyKey: `photo:${sha256}`,
   }
 
-  // THE DIAL (§7b) — 🟢 small + confident expense ⇒ autopilot; 🟡 otherwise ⇒ ask.
-  const autopilot = isExpense && v.confidence === 'high' && (v.amount as number) <= threshold()
-
-  // ---- 🟢 AUTOPILOT: file it, then just tell them (with a /undo escape hatch). ----
-  if (autopilot) {
-    const done = await runAutopilot('expense', { ...payload, auto: true })
-    if (done) {
-      await sendMessage(
-        chatId,
-        `✅ Filed ${rm(done.result.amount)} · ${done.result.category || 'expense'}` +
-          `${payload.merchant ? ` · ${payload.merchant}` : ''} — reply <code>/undo-${done.row.id}</code> within 24h to reverse.`,
-      )
-    } else {
-      // Duplicate event or a failed executor (already recorded in Activity).
-      await sendMessage(chatId, '📁 That looked already handled — nothing was double-filed.')
-    }
+  // Every bill with an amount waits for an owner to pick its Management Report
+  // category (Eric, 10 Nov 2026). Tapping a category files it; nothing auto-files.
+  if (isExpense) {
+    const proposalChat = await approvalChat(msg.from?.id, chatId)
+    const id = await proposeExpense({ payload, chatId: proposalChat, text: buildProposalText(v, threshold()) })
+    if (!id) await sendMessage(chatId, '📁 Already waiting on a category for this one. Check the buttons above.')
+    else if (proposalChat !== chatId) await sendMessage(chatId, '📁 Got it. An owner will pick the category.')
     return
   }
 
@@ -845,8 +890,7 @@ function buildProposalText(v: VisionResult, limit: number): string {
   }
   if (typeof v.amount === 'number' && v.amount > 0) {
     return (
-      `🧾 Receipt read: <b>${amt}</b>${bits ? ` · ${bits}` : ''}. ` +
-      `That's over your RM${limit} auto-file limit — file it to Cash Out?`
+      `🧾 Not a food bill: <b>${amt}</b>${bits ? ` · ${bits}` : ''}.`
     )
   }
   return `🗂️ Looks like a document${v.merchant ? ` from ${v.merchant}` : ''}. File it to your Vault?`

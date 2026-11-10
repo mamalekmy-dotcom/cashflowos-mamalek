@@ -68,6 +68,8 @@ const TEAM_GROUPS = (process.env.TELEGRAM_TEAM_CHAT_IDS || '')
 function spokenToBot(msg: any, me: string | null): boolean {
   if (process.env.GROUP_REPLY_TO_ALL === 'true') return true
   if (!me) return false
+  // /undo-74 typed in the group is always for the bot (owner-only anyway).
+  if (/^\/(undo|opening)\b/i.test((msg.text || '').trim())) return true
   if (msg.reply_to_message?.from?.username?.toLowerCase() === me.toLowerCase()) return true
   return new RegExp(`@${me}\\b`, 'i').test(msg.text || msg.caption || '')
 }

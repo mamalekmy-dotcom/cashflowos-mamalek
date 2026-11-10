@@ -9,11 +9,12 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // reading a bill and asking the owner takes a few seconds
 
 type Line = { text: string; item?: string; qty: number | null; unit: string; amount: number | null }
-type Flow = { agent_key: string; status: string; payload: any; proposed_at: string }
+type Flow = { agent_key: string; status: string; payload: any; proposed_at: string; expires_at: string }
 
 // Where a scanned supplier bill is up to on its way to the stock sheet.
 function flowStatus(f: Flow | undefined): string | null {
   if (!f) return null
+  if (f.status === 'proposed' && new Date(f.expires_at).getTime() <= Date.now()) return 'expired'
   if (f.agent_key === 'stock-draft') return f.status === 'proposed' ? 'owner checking' : 'closed'
   if (f.status === 'proposed') return 'waiting approval'
   if (f.status === 'executed') return 'recorded'
@@ -34,7 +35,7 @@ export default async function Scan() {
   // The newest stock step for each scan: a question still open, or the Approve card.
   const ids = (data ?? []).map(d => String(d.id))
   const { data: flows } = ids.length
-    ? await supabase.from('agent_actions').select('agent_key, status, payload, proposed_at')
+    ? await supabase.from('agent_actions').select('agent_key, status, payload, proposed_at, expires_at')
       .in('agent_key', ['stock-draft', 'stock-receipt']).in('payload->>scanDocId', ids)
       .order('proposed_at', { ascending: true })
     : { data: [] }

@@ -95,6 +95,14 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return "Couldn't read the bill. Please take the photo again, showing the whole bill."
   }
 
+  // A bill read with no items or no total would record an empty line and then block the
+  // real read of the same invoice as "already done". Ask for a clearer copy instead.
+  if (!bill.lines.length || !(Number(bill.total) > 0)) {
+    if (draftId) await closeDraft(draftId)
+    await sendMessage(sender.chatId, `📷 I read ${esc(bill.supplier)} ${esc(bill.invoice || '')} but not its ${bill.lines.length ? 'total' : 'items'}. Nothing was recorded. Please send a clearer photo of the whole bill.`)
+    return "Couldn't read the items or total. Please take the photo again, showing the whole bill."
+  }
+
   const supplier = matchSupplier(ctx, bill.supplier)
   if (!supplier) {
     const id = draftId ?? (await saveDraft(draft))

@@ -19,14 +19,19 @@ type Pending = {
 type HistItem = { when: string; agent: string; outcome: string; note: string }
 
 // Turn a proposal's immutable payload into one calm human line.
+const plain = (t: string) => t.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+const when = (iso: string) => new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: '2-digit', hour: 'numeric', minute: '2-digit' })
+
 function describePayload(p: any): string {
   if (!p || typeof p !== 'object') return 'A proposed action.'
-  if (p.note) return String(p.note)
+  // A bill still waiting for a supplier, item or category answer on Telegram.
+  if (p.bill) return [p.bill.supplier, p.bill.date, p.bill.total != null ? rm(Number(p.bill.total)) : null, p.bill.invoice].filter(Boolean).join(' · ')
+  if (p.note) return plain(String(p.note))
   const bits: string[] = []
   if (p.merchant) bits.push(String(p.merchant))
   if (p.amount != null && Number(p.amount) > 0) bits.push(rm(Number(p.amount)))
   if (p.category) bits.push(String(p.category))
-  if (p.text) return String(p.text)
+  if (p.text) return plain(String(p.text))
   return bits.length ? bits.join(' · ') : 'A proposed action.'
 }
 
@@ -46,7 +51,6 @@ async function getPending(): Promise<Pending[]> {
     .from('agent_actions')
     .select('id, agent_key, payload, proposed_at, expires_at')
     .eq('status', 'proposed')
-    .neq('agent_key', 'stock-draft') // a bill still waiting for answers in Telegram, not a decision
     .order('proposed_at', { ascending: false })
   if (error) {
     console.error('[CFO] could not read proposals:', error.message)
@@ -101,7 +105,9 @@ async function getHistory(): Promise<HistItem[]> {
 
 export default async function Approvals() {
   const [pending, history] = await Promise.all([getPending(), getHistory()])
-  const live = pending.filter(p => !p.expired)
+  const yes = pending.filter(p => !p.expired && p.agent_key !== 'stock-draft')
+  const asking = pending.filter(p => !p.expired && p.agent_key === 'stock-draft')
+  const expired = pending.filter(p => p.expired)
 
   return (
     <>
@@ -109,35 +115,67 @@ export default async function Approvals() {
       <p className="cap">What your robots want to do — approve or reject here, or from Telegram. Same decision either way.</p>
 
       {/* ---- Pending: the "needs your YES" list ---- */}
-      <p className="rowlabel">Pending{live.length ? ` (${live.length})` : ''}</p>
+      <p className="rowlabel">Needs your YES{yes.length ? ` (${yes.length})` : ''}</p>
       {!supabaseConfigured ? (
         <Empty />
-      ) : pending.length === 0 ? (
+      ) : yes.length === 0 ? (
         <div className="empty">All clear — nothing is waiting for your YES right now. 🎉</div>
       ) : (
-        pending.map(p => (
+        yes.map(p => (
           <div className="agent-card" key={p.id}>
             <p className="ac-name">
               <span>{describePayload(p.payload)}</span>
-              {p.expired ? (
-                <span className="pill expired">expired</span>
-              ) : (
-                <span className="pill proposed">needs your YES</span>
-              )}
+              <span className="pill proposed">needs your YES</span>
             </p>
             <p className="ac-role">
-              From <b>{p.agent_key}</b> · proposed {new Date(p.proposed_at).toLocaleString('en-MY')}
+              From <b>{p.agent_key}</b> · sent {when(p.proposed_at)} · <b>expires {when(p.expires_at)}</b>
             </p>
-            {p.expired ? (
-              <p className="ac-lastrun">This one timed out — it can no longer be approved. Ask the robot to propose again.</p>
-            ) : (
-              <div style={{ marginTop: 12 }}>
-                <ApproveButtons id={p.id} />
-              </div>
-            )}
+            <div style={{ marginTop: 12 }}>
+              <ApproveButtons id={p.id} />
+            </div>
           </div>
         ))
       )}
+
+      {/* ---- Bills stuck on a question in Telegram ---- */}
+      {asking.length ? (
+        <>
+          <p className="rowlabel" style={{ marginTop: 28 }}>Waiting for your answer on Telegram ({asking.length})</p>
+          <p className="cap">These bills are not recorded yet. The bot asked which supplier, item or expense category they are. Answer in your Telegram chat with the bot before they expire.</p>
+          <table className="tbl">
+            <thead><tr><th>Bill</th><th>Sent</th><th>Expires</th></tr></thead>
+            <tbody>
+              {asking.map(p => (
+                <tr key={p.id}>
+                  <td data-label="Bill">{describePayload(p.payload)}</td>
+                  <td data-label="Sent">{when(p.proposed_at)}</td>
+                  <td data-label="Expires">{when(p.expires_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
+
+      {/* ---- Timed out: nothing was recorded ---- */}
+      {expired.length ? (
+        <>
+          <p className="rowlabel" style={{ marginTop: 28 }}>Expired, not recorded ({expired.length})</p>
+          <p className="cap">These timed out and were never recorded. If the bill is real, send it to the bot again.</p>
+          <table className="tbl">
+            <thead><tr><th>Bill</th><th>Sent</th><th>Expired</th></tr></thead>
+            <tbody>
+              {expired.map(p => (
+                <tr key={p.id}>
+                  <td data-label="Bill">{describePayload(p.payload)}</td>
+                  <td data-label="Sent">{when(p.proposed_at)}</td>
+                  <td data-label="Expired">{when(p.expires_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
 
       {/* ---- History: the audit feed (the Activity view) ---- */}
       <p className="rowlabel" style={{ marginTop: 28 }}>History</p>

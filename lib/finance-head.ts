@@ -139,9 +139,24 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export async function financeCheck(today: string): Promise<ProposalDraft[]> {
   const { alarms } = await financeReadout(today)
   if (!alarms.length) return []
-  const { data } = await supabase.from('agent_actions').select('idempotency_key').in('idempotency_key', alarms.map(a => a.key))
-  const asked = new Set((data ?? []).map(r => r.idempotency_key as string))
-  const fresh = alarms.filter(a => !asked.has(a.key))
+  // A card left to expire with no Approve or Reject comes back the next morning under
+  // a new key (`…:again1`, `…:again2`), since a used key can never be proposed twice.
+  const { data } = await supabase
+    .from('agent_actions')
+    .select('idempotency_key, status, expires_at')
+    .eq('agent_key', F.key)
+    .gte('proposed_at', `${addDays(today, -62)}T00:00:00Z`)
+  const now = new Date().toISOString()
+  const tries = (key: string) =>
+    (data ?? []).filter(r => r.idempotency_key === key || new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:again\\d+$`).test(r.idempotency_key))
+  const fresh = alarms
+    .map(a => {
+      const past = tries(a.key)
+      const lapsed = (r: { status: string; expires_at: string }) => r.status === 'proposed' && r.expires_at <= now
+      if (past.length && !past.every(lapsed)) return null // decided, or still waiting on you
+      return past.length ? { ...a, key: `${a.key}:again${past.length}` } : a
+    })
+    .filter((a): a is Alarm => a !== null)
   if (!fresh.length) return []
 
   const [top, ...rest] = fresh

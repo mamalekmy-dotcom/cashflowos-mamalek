@@ -484,10 +484,10 @@ export async function recordReceipt(p: any) {
   const othersAmount = (p.lines ?? []).filter((l: any) => l.item === NOT_STOCK).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0)
   if (othersAmount > 0) {
     const { error } = await supabase.from('records').insert({
-      title: `${p.supplier} — ${p.expense || 'Others'}`,
+      title: `${p.printed || p.supplier} — ${p.expense || 'Others'}`,
       status: 'filed', amount: Math.round(othersAmount * 100) / 100, category: 'cash_out', due_date: p.date || null,
       notes: `Others lines on stock bill ${p.invoice || ''}`.trim(),
-      meta: { merchant: p.supplier, expense: p.expense || undefined, source: 'stock-others', key: p.key },
+      meta: { merchant: p.printed || p.supplier, expense: p.expense || undefined, source: 'stock-others', key: p.key },
     })
     if (error) console.error('[CFO] others expense failed:', error.message)
   }

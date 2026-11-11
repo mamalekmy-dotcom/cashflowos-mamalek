@@ -371,6 +371,7 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
       `A new ingredient: tap Cancel, add it to the sheet, and resend.`,
     rows([
       ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
+      { text: '✏️ Type the stock row', callback_data: `smt:${id}:${index}` },
       { text: 'Others (not COGS)', callback_data: `smi:${id}:${index}:x` },
       { text: '🧾 Whole bill is Others', callback_data: `smi:${id}:${index}:a` },
       { text: '🛑 Cancel this bill', callback_data: `smi:${id}:${index}:c` },
@@ -399,6 +400,43 @@ export async function answerStockCategory(id: number, name: string): Promise<{ t
   await supabase.from('agent_actions').update({ payload: draft }).eq('id', id).eq('status', 'proposed')
   await advance(draft, id)
   return { toast: `Saved as ${name}.` }
+}
+
+// "Type the stock row": for when the right row isn't among the buttons. The prompt's
+// words let a reply to it be traced back to the bill and line.
+export const typeRowPrompt = (id: number, index: number) =>
+  `✏️ Reply to this message with the stock row name for bill #${id}, line ${index + 1}. Part of the name is enough, e.g. "sen lek".`
+export const typedRowFor = (text: string): { id: number; index: number } | null => {
+  const m = text.match(/stock row name for bill #(\d+), line (\d+)/)
+  return m ? { id: Number(m[1]), index: Number(m[2]) - 1 } : null
+}
+
+// A typed row name: one clear match is saved, a few close ones come back as buttons.
+export async function answerTypedRow(id: number, index: number, typed: string): Promise<string> {
+  const row = await loadDraft(id)
+  if (!row || row.agent_key !== 'stock-draft') return 'That bill is already handled.'
+  const draft = row.payload as Draft
+  const line = draft.bill.lines[index]
+  if (!line) return 'That line has gone. Send the bill again.'
+  const ctx = await sheetContext(ymOf(draft.bill.date || todayISO()))
+  const names = ctx.items.map(i => i.name)
+  const exact = names.find(n => normal(n) === normal(typed))
+  const close = exact ? [exact] : candidates(typed, names, 8)
+  if (close.length === 1) {
+    await addAlias('item', line.text, close[0])
+    await advance(draft, id)
+    return `Saved: ${line.text} is ${close[0]}. I will remember this.`
+  }
+  if (!close.length) return `No stock row looks like "${typed}". Type another part of the name, or add the row to the sheet and resend the bill.`
+  await sendWithButtons(
+    draft.sender.approvalChat,
+    `🥬 <b>${esc(line.text)}</b>: which of these stock rows?`,
+    rows([
+      ...close.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
+      { text: '✏️ Type the stock row', callback_data: `smt:${id}:${index}` },
+    ]),
+  )
+  return 'Pick one above.'
 }
 
 async function loadDraft(id: number): Promise<ActionRow | null> {

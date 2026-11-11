@@ -21,7 +21,7 @@ import { SCHEDULED } from '@/agents/registry'
 import { jarvisIdentity, jarvisName } from '@/jarvis/config'
 import { logRun } from '@/lib/runs'
 import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
-import { runStockPipeline, answerStockQuestion, answerStockCategory, useSheetPrices } from '@/lib/stock-pipeline'
+import { runStockPipeline, answerStockQuestion, answerStockCategory, answerTypedRow, typeRowPrompt, typedRowFor, useSheetPrices } from '@/lib/stock-pipeline'
 import { categories, categoryNamed, fileWithCategory, proposeExpense, typePrompt, typedFor } from '@/lib/expenses'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -219,6 +219,14 @@ async function handleCallback(cb: any): Promise<Response> {
         if (chatId) await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
       }
     })
+    return Response.json({ ok: true })
+  }
+
+  // "Type the stock row": ask for the name as a reply.
+  const typeRow = data.match(/^smt:(\d+):(\d+)$/)
+  if (typeRow) {
+    await answerCallbackQuery(cbId)
+    if (chatId) await sendMessage(chatId, typeRowPrompt(Number(typeRow[1]), Number(typeRow[2])))
     return Response.json({ ok: true })
   }
 
@@ -437,6 +445,23 @@ async function handleMessage(msg: any): Promise<Response> {
     }
     const res = await undoAction(Number(undoMatch[1]))
     await sendMessage(chatId, res.message)
+    return Response.json({ ok: true })
+  }
+
+  // A typed stock row name, sent as a reply to the bot's "stock row name" prompt.
+  const typedRow = msg.reply_to_message?.from?.is_bot ? typedRowFor(msg.reply_to_message.text || '') : null
+  if (typedRow) {
+    if (!(await isOwner(msg.from?.id))) {
+      await sendMessage(chatId, 'Only an owner can match stock rows.')
+      return Response.json({ ok: true })
+    }
+    after(async () => {
+      const note = await answerTypedRow(typedRow.id, typedRow.index, text).catch(e => {
+        console.error('[CFO] typed row failed:', e)
+        return '⚠️ I could not reach the stock sheet. Please try again.'
+      })
+      await sendMessage(chatId, note)
+    })
     return Response.json({ ok: true })
   }
 

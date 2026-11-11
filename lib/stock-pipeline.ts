@@ -5,7 +5,7 @@ import { sendMessage, sendWithButtons, editMessageText, getFilePath, downloadFil
 import { propose, proposeAndNotify, approveRow, claim, markExecuted, type ActionRow } from './actions'
 import { todayISO, rm } from './records'
 import {
-  NOT_STOCK, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
+  NOT_STOCK, normal, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
   type Bill, type Context, type Spike,
 } from './stock-logic'
 import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
@@ -95,6 +95,15 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return "Couldn't read the bill. Please take the photo again, showing the whole bill."
   }
 
+  // Same invoice number as a bill already recorded, waiting for Approve, or waiting on a
+  // question: it's the same bill sent twice, even if the supplier name was read differently.
+  const twin = await sameInvoice(bill, ctx, draftId)
+  if (twin) {
+    if (draftId) await closeDraft(draftId)
+    await sendMessage(sender.chatId, `📁 Same invoice no. ${esc(bill.invoice)} as a bill already ${twin}. I didn't add it twice.`)
+    return `Duplicate: invoice ${bill.invoice} was already ${twin}. Nothing was added twice.`
+  }
+
   // A bill read with no items or no total would record an empty line and then block the
   // real read of the same invoice as "already done". Ask for a clearer copy instead.
   if (!bill.lines.length || !(Number(bill.total) > 0)) {
@@ -162,6 +171,34 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     await sendMessage(sender.chatId, `📨 Got it: ${esc(supplier)} ${rm(bill.total ?? 0)}. Sent to the owner to approve.`)
   }
   return row ? 'Sent to the owner to approve.' : 'Could not send this to the owner. Please try again.'
+}
+
+// Where an invoice number has already been seen: recorded in the sheet, on an Approve
+// card, or on another bill still waiting for an answer. Null when it's new or has no
+// usable number (handwritten bills often have none).
+const invoiceNo = (s?: string | null) => normal(s || '').replace(/ /g, '')
+async function sameInvoice(bill: Bill, ctx: Context, selfId?: number): Promise<string | null> {
+  const no = invoiceNo(bill.invoice)
+  if (no.length < 4 || !/\d/.test(no)) return null
+  if (ctx.log.some(l => l.key.replace(/-/g, '').endsWith(no))) return 'recorded'
+  const now = new Date().toISOString()
+  const { data } = await supabase.from('agent_actions').select('id, agent_key, status, expires_at, payload, result')
+    .in('agent_key', ['stock-receipt', 'stock-draft']).in('status', ['proposed', 'executed'])
+    .gt('proposed_at', new Date(Date.now() - 120 * 86_400_000).toISOString())
+  for (const row of data ?? []) {
+    if (row.id === selfId) continue
+    if (row.status === 'proposed' && row.expires_at <= now) continue // timed out, never recorded
+    if (row.result?.removed) continue
+    const p = row.payload ?? {}
+    const other = row.agent_key === 'stock-draft' ? p.bill?.invoice : p.invoice
+    if (invoiceNo(other) !== no) continue
+    if (row.agent_key === 'stock-draft') {
+      if (row.status === 'proposed') return 'waiting for your answer on Telegram'
+      continue // a finished question: its Approve card is the row that counts
+    }
+    return row.status === 'proposed' ? 'waiting for Approve' : 'recorded'
+  }
+  return null
 }
 
 // Handwritten cash bills get misread (28 read as 29). Lines whose price isn't the stock

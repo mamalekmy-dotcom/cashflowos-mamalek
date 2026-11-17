@@ -5,15 +5,31 @@ import type { Context } from './stock-logic'
 export const stockConfigured = () =>
   Boolean(process.env.STOCK_SCRIPT_URL?.trim() && process.env.STOCK_SCRIPT_SECRET?.trim())
 
+// The script handles one request at a time. When many bills arrive together (an album
+// of 20+), a tap can wait behind them and time out, so busy answers are tried again.
+const BUSY = /lock|timed? ?out|too many|try again|service invoked|rate|50\d|429/i
+
 async function call<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
-  const res = await fetch(process.env.STOCK_SCRIPT_URL!.trim(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ ...body, action, secret: process.env.STOCK_SCRIPT_SECRET!.trim() }),
-  })
-  const data = await res.json().catch(() => null)
-  if (!data?.ok) throw new Error(data?.error || `stock sheet answered ${res.status}`)
-  return data as T
+  let last: Error | null = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 3000 * attempt))
+    try {
+      const res = await fetch(process.env.STOCK_SCRIPT_URL!.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ ...body, action, secret: process.env.STOCK_SCRIPT_SECRET!.trim() }),
+      })
+      const data = await res.json().catch(() => null)
+      if (data?.ok) return data as T
+      last = new Error(data?.error || `stock sheet answered ${res.status}`)
+      if (data?.error && !BUSY.test(data.error)) throw last // a real refusal: retrying won't help
+    } catch (e: any) {
+      if (e === last) throw e
+      last = e instanceof Error ? e : new Error(String(e))
+    }
+    console.warn(`[CFO] stock sheet busy on ${action}, attempt ${attempt + 1}:`, last?.message)
+  }
+  throw last ?? new Error('stock sheet did not answer')
 }
 
 // With a date, it also says what that day's Purchase row already holds.

@@ -216,7 +216,10 @@ async function handleCallback(cb: any): Promise<Response> {
         if (res.notStock) await runVaultPipeline(res.notStock)
       } catch (e) {
         console.error('[CFO] stock question failed:', e)
-        if (chatId) await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
+        // Put the buttons back, so the same question can simply be tapped again.
+        const buttons = cb.message?.reply_markup?.inline_keyboard
+        if (chatId && messageId && buttons) await editMessageReplyMarkup(chatId, messageId, buttons)
+        if (chatId) await sendMessage(chatId, '⚠️ The stock sheet was busy, so nothing was saved. Tap your answer again on the question above.')
       }
     })
     return Response.json({ ok: true })

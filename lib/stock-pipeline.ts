@@ -52,7 +52,7 @@ export async function runStockPipeline(msg: any, sender: Sender): Promise<boolea
     await sendMessage(sender.chatId, `📄 That's a statement of account from ${esc(bill.supplier)}, not a bill, so I recorded nothing.`)
     return true
   }
-  await advance({ bill, fileId: file.fileId, mime: file.mime, sender, msg: { chat: msg.chat, from: msg.from, photo: msg.photo, document: msg.document } })
+  await advance({ bill, fileId: file.fileId, mime: file.mime, sender, msg: { message_id: msg.message_id, chat: msg.chat, from: msg.from, photo: msg.photo, document: msg.document } })
   return true
 }
 
@@ -306,6 +306,18 @@ async function isPending(key: string): Promise<boolean> {
 
 const rows = (buttons: InlineKeyboard[number]): InlineKeyboard => buttons.map(b => [b])
 
+// Which bill a question is about: shop, date, invoice no. and total on every question, so
+// a batch of 20 bills can't be mixed up. In the chat the bill was sent in, the question is
+// also a reply to the bill's own photo.
+function aboutBill(d: Draft): string {
+  const b = d.bill
+  return `🧾 <b>${esc(b.supplier || 'Shop name not readable')}</b> · ${b.date ? shown(b.date) : 'no date'} · ` +
+    `${b.invoice ? `Inv <b>${esc(b.invoice)}</b>` : 'no invoice no.'} · Total <b>${rm(b.total ?? 0)}</b>` +
+    `${d.scanDocId ? ` · scanned by ${esc(d.sender.name)}` : ''}`
+}
+const replyTo = (d: Draft): number | undefined =>
+  d.msg?.message_id && Number(d.msg.chat?.id) === Number(d.sender.approvalChat) ? Number(d.msg.message_id) : undefined
+
 async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void> {
   const { bill, sender } = draft
   const names = [...new Set(ctx.suppliers.map(s => s.name))].filter(n => n !== OTHERS)
@@ -322,13 +334,14 @@ async function askSupplier(id: number, draft: Draft, ctx: Context): Promise<void
   const column = (name: string) => ctx.suppliers.find(s => s.name === name)?.col
   await sendWithButtons(
     sender.approvalChat,
-    `🏷 New supplier on a bill: <b>${esc(bill.supplier || 'name not readable')}</b>, ${rm(bill.total ?? 0)}.\nWhich Purchase column is this?`,
+    `${aboutBill(draft)}\n\n🏷 New supplier: <b>${esc(bill.supplier || 'name not readable')}</b>. Which Purchase column is this?`,
     rows([
       ...guess.map(name => ({ text: name.slice(0, 40), callback_data: `sms:${id}:k${column(name)}` })),
       { text: 'OTHERS column', callback_data: `sms:${id}:o` },
       { text: 'Not a stock purchase', callback_data: `sms:${id}:x` },
       { text: '🛑 Cancel this bill', callback_data: `sms:${id}:c` },
     ]),
+    replyTo(draft),
   )
 }
 
@@ -366,7 +379,9 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
   const guess = [...new Set([...usual, ...smart, ...candidates(line.text, names)])].slice(0, 6)
   await sendWithButtons(
     draft.sender.approvalChat,
-    `🥬 New item on a bill: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +
+    `${aboutBill(draft)}
+
+🥬 Line ${index + 1} of ${draft.bill.lines.length}: <b>${esc(line.text)}</b> (${line.qty ?? '?'} ${esc(line.unit)} × RM${line.price?.toFixed(2) ?? '?'} = RM${line.amount?.toFixed(2) ?? '?'}).\n` +
       `Which stock row is it? Not an ingredient: tap Others, it stays out of COGS but the money stays on the Purchase tab. ` +
       `A new ingredient: tap Cancel, add it to the sheet, and resend.`,
     rows([
@@ -376,6 +391,7 @@ async function askItem(id: number, draft: Draft, ctx: Context, index: number): P
       { text: '🧾 Whole bill is Others', callback_data: `smi:${id}:${index}:a` },
       { text: '🛑 Cancel this bill', callback_data: `smi:${id}:${index}:c` },
     ]),
+    replyTo(draft),
   )
 }
 
@@ -385,10 +401,13 @@ async function askExpense(id: number, draft: Draft, others: { text: string; amou
   const list = others.slice(0, 5).map(l => esc(l.text)).join(', ')
   await sendWithButtons(
     draft.sender.approvalChat,
-    `🧾 <b>${esc(draft.bill.supplier)}</b>: ${list}${others.length > 5 ? '…' : ''} = <b>${rm(sum)}</b> is not food cost.
+    `${aboutBill(draft)}
+
+${list}${others.length > 5 ? '…' : ''} = <b>${rm(sum)}</b> is not food cost.
 ` +
       `Which expense is it? It goes to the Management Report, and stays in the sheet's OTHERS column.`,
     categoryKeyboard('sxc', id, await categories()),
+    replyTo(draft),
   )
 }
 
@@ -430,7 +449,9 @@ export async function answerTypedRow(id: number, index: number, typed: string): 
   if (!close.length) return `No stock row looks like "${typed}". Type another part of the name, or add the row to the sheet and resend the bill.`
   await sendWithButtons(
     draft.sender.approvalChat,
-    `🥬 <b>${esc(line.text)}</b>: which of these stock rows?`,
+    `${aboutBill(draft)}
+
+🥬 Line ${index + 1}: <b>${esc(line.text)}</b>. Which of these stock rows?`,
     rows([
       ...close.map(name => ({ text: name.slice(0, 40), callback_data: `smi:${id}:${index}:r${ctx.items.find(i => i.name === name)?.row}` })),
       { text: '✏️ Type the stock row', callback_data: `smt:${id}:${index}` },

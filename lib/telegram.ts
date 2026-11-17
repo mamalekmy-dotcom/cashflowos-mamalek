@@ -106,6 +106,8 @@ export async function sendWithButtons(
   chatId: string | number,
   text: string,
   inlineKeyboard: InlineKeyboard,
+  // Show the message as a reply to this one (e.g. the bill's own photo).
+  replyTo?: number,
 ): Promise<number | null> {
   const url = api('sendMessage')
   if (!url) {
@@ -120,6 +122,7 @@ export async function sendWithButtons(
       text,
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: inlineKeyboard },
+      reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined,
     }),
   })
   const body = await res.json().catch(() => ({}))

@@ -460,6 +460,14 @@ export async function answerTypedRow(id: number, index: number, typed: string): 
   return 'Pick one above.'
 }
 
+// Carries on a waiting bill whose questions are already answered (e.g. the same text was
+// matched on another bill since). From the Approvals page.
+export async function resumeDraft(id: number): Promise<string> {
+  const row = await loadDraft(id)
+  if (!row || row.agent_key !== 'stock-draft') return 'Already handled.'
+  return advance(row.payload as Draft, id)
+}
+
 async function loadDraft(id: number): Promise<ActionRow | null> {
   const { data } = await supabase.from('agent_actions').select('*').eq('id', id).eq('status', 'proposed').maybeSingle()
   return (data as ActionRow) ?? null

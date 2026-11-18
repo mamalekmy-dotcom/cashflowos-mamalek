@@ -2,8 +2,11 @@ import { supabase, supabaseConfigured } from '@/lib/supabase'
 import { rm } from '@/lib/records'
 import Empty from '@/app/_components/Empty'
 import ApproveButtons from '@/app/_components/ApproveButtons'
+import { draftQuestions } from '@/lib/draft-question'
+import DraftAnswer from './DraftAnswer'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60 // an answer can ask the stock sheet and the AI for the next question
 
 // One waiting proposal.
 type Pending = {
@@ -108,6 +111,10 @@ export default async function Approvals() {
   const yes = pending.filter(p => !p.expired && p.agent_key !== 'stock-draft')
   const asking = pending.filter(p => !p.expired && p.agent_key === 'stock-draft')
   const expired = pending.filter(p => p.expired)
+  const questions = await draftQuestions(asking).catch(e => {
+    console.error('[CFO] could not work out bill questions:', e)
+    return new Map()
+  })
 
   return (
     <>
@@ -141,19 +148,17 @@ export default async function Approvals() {
       {asking.length ? (
         <>
           <p className="rowlabel" style={{ marginTop: 28 }}>Waiting for your answer on Telegram ({asking.length})</p>
-          <p className="cap">These bills are not recorded yet. The bot asked which supplier, item or expense category they are. Answer in your Telegram chat with the bot before they expire.</p>
-          <table className="tbl">
-            <thead><tr><th>Bill</th><th>Sent</th><th>Expires</th></tr></thead>
-            <tbody>
-              {asking.map(p => (
-                <tr key={p.id}>
-                  <td data-label="Bill">{describePayload(p.payload)}</td>
-                  <td data-label="Sent">{when(p.proposed_at)}</td>
-                  <td data-label="Expires">{when(p.expires_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className="cap">These bills are not recorded yet. Answer here or in Telegram, whichever is easier. After each answer the bot asks the next question, or sends the Approve card (it shows up under Needs your YES after a refresh).</p>
+          {asking.map(p => {
+            const q = questions.get(p.id)
+            return (
+              <div className="agent-card" key={p.id}>
+                <p className="ac-name"><span>{describePayload(p.payload)}</span><span className="pill proposed">question open</span></p>
+                <p className="ac-role">Sent {when(p.proposed_at)} · <b>expires {when(p.expires_at)}</b></p>
+                {q ? <DraftAnswer id={p.id} ask={q.ask} choices={q.choices} /> : <p className="ac-lastrun">Could not read the stock sheet just now. Refresh to try again.</p>}
+              </div>
+            )
+          })}
         </>
       ) : null}
 

@@ -135,7 +135,7 @@ export async function costsUpTo(day: string, today: string) {
   const total = food + labour + rent
   return {
     day, month, dayNo, days: daysIn(month), live,
-    netSales, food, foodFrom, foodNote, labour, rent, total,
+    netSales: round(netSales), food: round(food), foodFrom, foodNote, labour: round(labour), rent: round(rent), total: round(total),
     costsKeyed: Boolean(keyed || tms),
     flrPercent: netSales ? (total / netSales) * 100 : null,
   }

@@ -60,7 +60,7 @@ async function latestReports() {
 
 function SalesTable({ day, month, year, monthDays, monthLabel }: { day: Takings | null; month: Takings; year: Takings; monthDays: number; monthLabel: string }) {
   const cols = [`${monthLabel} so far (${monthDays} day${monthDays === 1 ? '' : 's'})`, 'Year so far']
-  const cell = (t: Takings | null, f: (t: Takings) => number) => (t ? rm(f(t)) : '–')
+  const cell = (t: Takings | null, f: (t: Takings) => number) => (t ? rm(Math.round(f(t) * 100) / 100) : "–")
   const lines: [string, (t: Takings) => number, boolean][] = [
     ['Nett sales', t => t.nett, true],
     ['Service charge 10%', t => t.service, false],

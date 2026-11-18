@@ -1,10 +1,10 @@
-import { inCogs } from '@/lib/cogs-rule'
 import { getRecords, isCashReceived, rm, todayISO } from '@/lib/records'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import Stat from '@/app/_components/Stat'
 import { DAILY_TILES, SALES_COLUMNS, changeText, type SalesValues } from '@/app/report/fields'
 import HealthStrip from '@/app/flr/HealthStrip'
-import { flrFor } from '@/lib/flr'
+import { costsUpTo, salesOverview, type Takings } from '@/lib/dashboard'
+import DayPicker from './DayPicker'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,81 +32,18 @@ async function leaveWaiting(): Promise<number> {
   return count ?? 0
 }
 
-// The last month whose stock count is done (COGS Report), so this is the last full month,
-// not this one. Food is stock-based COGS (OTHERS left out, as on the COGS Report);
-// labour and rental are what's keyed on the FLR page, else the TMS report. With no
-// counted month yet, the TMS report alone.
-type Costs = { month: string; net_sales: number; cogs: number; labor: number; rent: number; costsKeyed: boolean }
-async function latestCosts(): Promise<Costs | null> {
-  if (!supabaseConfigured) return null
-  const { data: closed } = await supabase.from('stock_closed').select('month').order('month', { ascending: false }).limit(1)
-  const month = closed?.[0]?.month as string | undefined
-  if (!month) {
-    const { data } = await supabase.from('monthly_pnl').select('month, net_sales, cogs, labor, rent')
-      .gt('net_sales', 0).order('month', { ascending: false }).limit(1).maybeSingle()
-    return data ? { ...data, costsKeyed: true } : null
-  }
-  const [y, m] = month.split('-').map(Number)
-  const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
-  const [{ data: stock }, { data: sales }, { data: keyed }, { data: tms }] = await Promise.all([
-    supabase.from('stock_counts').select('section, item, opening_amount, bought_amount, closing_amount').eq('month', month),
-    supabase.from('daily_sales').select('net_sales').gte('sale_date', `${month}-01`).lte('sale_date', lastDay),
-    supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
-    supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
-  ])
-  const cogs = (stock ?? []).filter(r => inCogs(r.section, r.item))
-    .reduce((s, r) => s + Number(r.opening_amount) + Number(r.bought_amount) - Number(r.closing_amount), 0)
-  const pos = (sales ?? []).reduce((s, r) => s + Number(r.net_sales), 0)
-  return {
-    month, cogs,
-    net_sales: pos || Number(tms?.net_sales ?? 0),
-    labor: keyed ? Number(keyed.labour) : Number(tms?.labor ?? 0),
-    rent: keyed ? Number(keyed.rent) : Number(tms?.rent ?? 0),
-    costsKeyed: Boolean(keyed || tms),
-  }
-}
-
 const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
-
-type Takings = { nett: number; service: number; sst: number }
-const addUp = (rows: { net_sales: number; service_charge: number; sst: number }[]): Takings =>
-  rows.reduce((t, r) => ({ nett: t.nett + Number(r.net_sales), service: t.service + Number(r.service_charge), sst: t.sst + Number(r.sst) }), { nett: 0, service: 0, sst: 0 })
-
-// Yesterday and the month so far, from daily_sales (GeniusPOS each morning, or the X
-// Reading imports). Service charge and SST are what the POS actually charged.
-async function takings() {
-  if (!supabaseConfigured) return null
-  const yesterday = dayBefore(todayISO())
-  const month = yesterday.slice(0, 7)
-  const [{ data }, { data: latest }] = await Promise.all([
-    supabase.from('daily_sales').select('sale_date, net_sales, service_charge, sst').gte('sale_date', `${month}-01`).lte('sale_date', yesterday),
-    supabase.from('daily_sales').select('sale_date').order('sale_date', { ascending: false }).limit(1),
-  ])
-  const rows = data ?? []
-  const day = rows.find(r => r.sale_date === yesterday)
-  return {
-    yesterday, month, days: rows.length, lastDate: latest?.[0]?.sale_date as string | undefined,
-    day: day ? addUp([day]) : null,
-    monthToDate: addUp(rows),
-  }
-}
 
 const shortDate = (iso: string) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const monthOf = (iso: string) =>
+  new Date(`${iso.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+const monthShort = (ym: string) =>
+  new Date(`${ym}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
 
-function TakingsRow({ label, t }: { label: string; t: Takings }) {
-  return (
-    <>
-      <p className="rowlabel">{label}</p>
-      <div className="grid">
-        <Stat label="Nett sales" value={rm(t.nett)} />
-        <Stat label="Service charge 10%" value={rm(t.service)} />
-        <Stat label="SST 6%" value={rm(t.sst)} />
-        <Stat label="Total sales" value={rm(t.nett + t.service + t.sst)} sub="Nett + service charge + SST" />
-      </div>
-    </>
-  )
-}
+// A picked day from the URL, else today. Never after today or before 2026.
+const pickDay = (asked: string | undefined, today: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(asked ?? '') && asked! <= today && asked! >= '2026-01-01' ? asked! : today
 
 // The latest report with figures in it, and the report from the calendar day before.
 async function latestReports() {
@@ -121,59 +58,109 @@ async function latestReports() {
   return { day: latest.report_date, latest, previousDay, previous: earlier as unknown as SalesValues | null }
 }
 
-export default async function Dashboard() {
-  const [rows, waiting, sales, leave, costs, reports, flr] = await Promise.all([
-    getRecords(), proposedCount(), takings(), leaveWaiting(), latestCosts(), latestReports(),
-    supabaseConfigured ? flrFor(todayISO().slice(0, 7), todayISO()) : null,
+function SalesTable({ day, month, year, monthDays, monthLabel }: { day: Takings | null; month: Takings; year: Takings; monthDays: number; monthLabel: string }) {
+  const cols = [`${monthLabel} so far (${monthDays} day${monthDays === 1 ? '' : 's'})`, 'Year so far']
+  const cell = (t: Takings | null, f: (t: Takings) => number) => (t ? rm(f(t)) : '–')
+  const lines: [string, (t: Takings) => number, boolean][] = [
+    ['Nett sales', t => t.nett, true],
+    ['Service charge 10%', t => t.service, false],
+    ['SST 6%', t => t.sst, false],
+    ['Total sales', t => t.nett + t.service + t.sst, true],
+  ]
+  return (
+    <table className="tbl sales3" style={{ maxWidth: 820 }}>
+      <thead><tr><th></th><th>Day</th><th>{cols[0]}</th><th>{cols[1]}</th></tr></thead>
+      <tbody>
+        {lines.map(([label, f, bold]) => {
+          const B = ({ children }: { children: React.ReactNode }) => (bold ? <strong>{children}</strong> : <>{children}</>)
+          return (
+            <tr key={label}>
+              <td data-label=""><B>{label}</B></td>
+              <td data-label="Day"><B>{cell(day, f)}</B></td>
+              <td data-label={cols[0]}><B>{cell(month, f)}</B></td>
+              <td data-label={cols[1]}><B>{cell(year, f)}</B></td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+const dayName = (day: string, today: string, yesterday: string) =>
+  day === today ? `Today, ${shortDate(day)}` : day === yesterday ? `Yesterday, ${shortDate(day)}` : shortDate(day)
+
+type Search = { sales?: string; flr?: string; costs?: string }
+
+export default async function Dashboard({ searchParams }: { searchParams: Promise<Search> }) {
+  const asked = await searchParams
+  const today = todayISO()
+  const yesterday = dayBefore(today)
+  const salesDay = pickDay(asked.sales, today)
+  const flrDay = pickDay(asked.flr, today)
+  const costsDay = pickDay(asked.costs, today)
+  const [rows, waiting, leave, reports, sales, flr, costs] = await Promise.all([
+    getRecords(), proposedCount(), leaveWaiting(), latestReports(),
+    supabaseConfigured ? salesOverview(salesDay, today) : null,
+    supabaseConfigured ? costsUpTo(flrDay, today) : null,
+    supabaseConfigured ? costsUpTo(costsDay, today) : null,
   ])
-  const monthName = sales
-    ? new Date(`${sales.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    : ''
-  const share = (amount: number) => `${((amount / Number(costs?.net_sales)) * 100).toFixed(1)}%`
-  const totalCost = Number(costs?.cogs) + Number(costs?.labor) + Number(costs?.rent)
-  const costMonth = costs
-    ? new Date(`${costs.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    : ''
+  const share = (amount: number) => (costs?.netSales ? `${((amount / costs.netSales) * 100).toFixed(1)}%` : '–')
+  const upTo = (day: string, dayNo: number) => (dayNo === 1 ? shortDate(day) : `1–${shortDate(day)}`)
 
   const cashIn = rows.filter(isCashReceived).reduce((s, r) => s + Number(r.amount || 0), 0)
 
   return (
     <>
       <h1 className="ph">Dashboard</h1>
-      <p className="cap">Costs, sales and what's waiting on you.</p>
+      <p className="cap">Sales, costs and what&apos;s waiting on you.</p>
 
-      <p className="cap">
-        {sales?.lastDate ? `Sales logged up to ${sales.lastDate}.` : 'No sales logged yet.'}
-      </p>
-
-      {/* Row 0 — costs as a share of net sales, last closed month */}
-      {costs ? (
-        <>
-          <p className="rowlabel">Costs · {costMonth} · % of net sales</p>
-          <div className="grid">
-            <Stat label="Food cost" value={share(Number(costs.cogs))} sub={rm(Number(costs.cogs))} />
-            <Stat label="Labour cost" value={share(Number(costs.labor))} sub={costs.costsKeyed ? rm(Number(costs.labor)) : 'Not keyed in yet'} href="/flr" />
-            <Stat label="Rental cost" value={share(Number(costs.rent))} sub={costs.costsKeyed ? rm(Number(costs.rent)) : 'Not keyed in yet'} href="/flr" />
-            <Stat label="Total cost" value={share(totalCost)} sub={rm(totalCost)} />
-          </div>
-        </>
-      ) : null}
-
-      {/* Rows 1 and 2 — yesterday, then the month so far: nett, service charge, SST, total */}
+      {/* Sales Overview: the picked day, its month so far and its year so far */}
       {sales ? (
         <>
-          {sales.day
-            ? <TakingsRow label={`Sales Overview · Yesterday, ${shortDate(sales.yesterday)}`} t={sales.day} />
-            : <p className="rowlabel">Sales Overview · Yesterday, {shortDate(sales.yesterday)}: no sales logged</p>}
-          <TakingsRow label={`Sales Overview · ${monthName} so far (${sales.days} days)`} t={sales.monthToDate} />
+          <div className="sechead">
+            <p className="rowlabel">Sales Overview · {dayName(salesDay, today, yesterday)}{sales.live ? ' · live from POS' : ''}</p>
+            <DayPicker param="sales" day={salesDay} today={today} yesterday={yesterday} />
+          </div>
+          <SalesTable day={sales.dayTakings} month={sales.monthTakings} year={sales.yearTakings}
+            monthDays={sales.monthDays} monthLabel={monthOf(salesDay).split(' ')[0]} />
+          {sales.live && sales.liveError ? <p className="cap">Could not reach the POS ({sales.liveError}), so this day shows no sales yet.</p> : null}
+          {sales.live && salesDay === today && !sales.liveError ? <p className="cap">Today is still trading, so today&apos;s figures keep growing. Reload for the latest.</p> : null}
+          {sales.tmsMonths.length ? (
+            <p className="cap">
+              Year so far: {sales.tmsMonths.map(monthShort).join(', ')} {sales.tmsMonths.length === 1 ? 'is' : 'are'} nett sales from the TMS report,
+              with no service charge or SST split, so those two only count months with POS data.
+            </p>
+          ) : null}
         </>
       ) : null}
 
-      {/* FLR this month: green under 70%, red over. Opens the FLR Report. */}
+      {/* FLR from the 1st of the month up to the picked day: green under 70%, red over */}
       {flr ? (
         <>
-          <p className="rowlabel">FLR · {new Date(`${todayISO().slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })} so far</p>
+          <div className="sechead">
+            <p className="rowlabel">FLR · {monthOf(flrDay)}, {upTo(flrDay, flr.dayNo)}</p>
+            <DayPicker param="flr" day={flrDay} today={today} yesterday={yesterday} />
+          </div>
           <HealthStrip percent={flr.flrPercent} href="/flr" />
+        </>
+      ) : null}
+
+      {/* Costs as a share of nett sales, the month up to the picked day */}
+      {costs ? (
+        <>
+          <div className="sechead">
+            <p className="rowlabel">Costs · {monthOf(costsDay)}, {upTo(costsDay, costs.dayNo)} · % of nett sales</p>
+            <DayPicker param="costs" day={costsDay} today={today} yesterday={yesterday} />
+          </div>
+          <div className="grid">
+            <Stat label="Food cost" value={share(costs.food)} sub={`${rm(costs.food)} · ${costs.foodFrom}`} href="/cogs" />
+            <Stat label="Labour cost" value={share(costs.labour)} sub={costs.costsKeyed ? rm(costs.labour) : 'Not keyed in yet'} href="/flr" />
+            <Stat label="Rental cost" value={share(costs.rent)} sub={costs.costsKeyed ? rm(costs.rent) : 'Not keyed in yet'} href="/flr" />
+            <Stat label="Total cost" value={share(costs.total)} sub={`${rm(costs.total)} of ${rm(costs.netSales)} nett sales`} />
+          </div>
+          {costs.foodNote ? <p className="cap">{costs.foodNote}</p> : null}
+          {costs.costsKeyed && costs.dayNo < costs.days ? <p className="cap">Labour and rental count {costs.dayNo} of {costs.days} days of the month.</p> : null}
         </>
       ) : null}
 

@@ -39,7 +39,7 @@ const nextMonth = (month: string) => {
 
 // Each month's food cost % of POS sales before tax, and how it was reached. OTHERS other
 // than gas isn't food cost. Months without a count borrow from the counted ones.
-async function foodRates() {
+export async function foodRates() {
   const [stock, sales] = await Promise.all([
     readAll<{ month: string; section: string; item: string; opening_amount: number; bought_amount: number }>((a, b) =>
       supabase.from('stock_counts').select('month, section, item, opening_amount, bought_amount').order('id').range(a, b)),

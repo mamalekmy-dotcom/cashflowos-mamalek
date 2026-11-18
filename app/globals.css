@@ -366,3 +366,12 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .cs-next .ac-role { margin-bottom: 4px; }
 .cs-never { font-size: 13px; color: var(--ink-soft); background: var(--paper-2); border-radius: var(--r-8); padding: 10px 14px; margin: 0; }
 @media (prefers-reduced-motion: reduce) { .cs-link.hot, .cs-ring, .cs-bubble { animation: none; } }
+
+/* ---- Dashboard: a section header with its own day picker ---- */
+.sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 22px 0 10px; }
+.sechead .rowlabel { margin: 0; }
+.daypick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.daypick .btn { padding: 6px 12px; font-size: 13px; }
+.daypick .btn.on { background: var(--clay); color: #FFFDF9; border-color: var(--clay); }
+.daypick input[type="date"] { background: var(--card); border: 1px solid var(--line-2); border-radius: var(--r-13); padding: 5px 10px; font-size: 13px; color: var(--ink); font-family: inherit; }
+.tbl.sales3 td:not(:first-child), .tbl.sales3 th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }

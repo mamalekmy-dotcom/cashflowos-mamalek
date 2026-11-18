@@ -271,7 +271,8 @@ function card(supplier: string, bill: Bill, lines: (Bill['lines'][number] & { it
   }
   if (problems.length) parts.push('', ...problems.map(p => `⚠️ ${esc(p)}`))
   // Ice and gas bills are often keyed into the sheet by hand as well, so ask before adding.
-  const already = ctx.filled?.find(f => f.supplier === supplier && f.amount > 0)
+  // OTHERS holds many unrelated bills a day, so money already there says nothing about this one.
+  const already = supplier === OTHERS ? undefined : ctx.filled?.find(f => f.supplier === supplier && f.amount > 0)
   if (already && bill.date) {
     parts.push('', `❓ The sheet already has <b>${rm(already.amount)}</b> under ${esc(supplier)} on ${shown(bill.date)}, maybe keyed in by hand.`,
       'Same bill? Tap Reject so it isn\'t counted twice. A second bill that day? Tap Approve.')
@@ -548,7 +549,10 @@ export async function recordReceipt(p: any) {
   for (const s of saved) if (s.error) console.error('[CFO] app stock copy failed:', s.error.message)
 
   // The Others lines are an expense for the Management Report.
-  const othersAmount = (p.lines ?? []).filter((l: any) => l.item === NOT_STOCK).reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0)
+  const othersLines = (p.lines ?? []).filter((l: any) => l.item === NOT_STOCK)
+  const allOthers = othersLines.length === (p.lines ?? []).length && Number(p.total) > 0
+  // When the whole bill is Others the bill's own total counts (line amounts are sometimes misread).
+  const othersAmount = allOthers ? Number(p.total) : othersLines.reduce((s: number, l: any) => s + (Number(l.amount) || 0), 0)
   if (othersAmount > 0) {
     const { error } = await supabase.from('records').insert({
       title: `${p.printed || p.supplier} — ${p.expense || 'Others'}`,

@@ -81,7 +81,7 @@ export async function createUser(input: {
 
 export async function updateUser(
   id: number,
-  input: { role: string; extraTabs: string[]; telegramId: string },
+  input: { role: string; extraTabs: string[]; telegramId: string; canSendBills?: boolean },
 ): Promise<Result> {
   await requireOwner()
   const telegramId = parseTelegramId(input.telegramId)
@@ -92,7 +92,10 @@ export async function updateUser(
   }
   const { error } = await supabase
     .from('app_users')
-    .update({ role: input.role, extra_tabs: validTabs(input.extraTabs), telegram_id: telegramId })
+    .update({
+      role: input.role, extra_tabs: validTabs(input.extraTabs), telegram_id: telegramId,
+      ...(input.canSendBills === undefined ? {} : { can_send_bills: input.role === 'owner' || input.canSendBills }),
+    })
     .eq('id', id)
   if (error) return saveError(error.message)
   revalidatePath('/admin')

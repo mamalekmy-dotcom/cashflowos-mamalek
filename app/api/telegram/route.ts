@@ -207,7 +207,7 @@ async function handleCallback(cb: any): Promise<Response> {
   }
 
   // The stock questions: which supplier or row a new line on a bill belongs to.
-  if (/^sm[si]:/.test(data)) {
+  if (/^sm[sid]:/.test(data)) {
     await answerCallbackQuery(cbId, 'Saving…')
     if (chatId && messageId) await editMessageReplyMarkup(chatId, messageId)
     after(async () => {
@@ -341,6 +341,16 @@ async function handleMessage(msg: any): Promise<Response> {
   const allowed = await isAllowed(msg.from?.id)
   const receiptOnly = !allowed && RECEIPT_SENDERS.includes(String(msg.from?.id))
   if (!allowed && !(receiptOnly && (msg.photo || msg.document))) return Response.json({ ok: true })
+
+  // Bills only from people the owner switched on in Admin ("Can send bills"). Owners
+  // always may. Ids only on the env lists, not linked to an account, keep working.
+  if (allowed && (msg.photo || msg.document)) {
+    const linked = await userByTelegramId(msg.from?.id)
+    if (linked && linked.role !== 'owner' && linked.can_send_bills === false) {
+      await sendMessage(chatId, `📵 ${msg.from?.first_name || 'You'} can't send bills yet, so nothing was recorded. Ask an owner to tick "Can send bills" for you in the app (Admin).`)
+      return Response.json({ ok: true })
+    }
+  }
 
   // Group rules. /id comes first because you need the id before the group can be
   // listed in TELEGRAM_TEAM_CHAT_IDS.

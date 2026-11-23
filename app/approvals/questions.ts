@@ -11,7 +11,7 @@ export async function answerDraft(value: string): Promise<{ ok: boolean; message
   await requireOwner()
   try {
     let message: string
-    if (/^sm[si]:\d+:/.test(value)) {
+    if (/^sm[sid]:\d+:/.test(value)) {
       const res = await answerStockQuestion(value)
       message = res.notStock ? 'Marked as not a stock purchase.' : res.toast
     } else if (/^sxc:\d+:/.test(value)) {

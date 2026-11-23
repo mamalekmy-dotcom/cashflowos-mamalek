@@ -539,3 +539,37 @@ insert into expense_categories (name, sort) values
   ('Vehicle Maintenance', 140), ('Cleaning & Supplies', 150), ('Transportation', 160),
   ('Training Expenses', 170)
 on conflict (name) do nothing;
+
+-- ------------------------------------------------------------
+-- Who may send bills to the bot. Owners always may. Existing linked staff keep sending.
+-- ------------------------------------------------------------
+alter table app_users add column if not exists can_send_bills boolean not null default false;
+update app_users set can_send_bills = true where telegram_id is not null and active;
+
+-- ------------------------------------------------------------
+-- subscriptions: paid services and servers, and when each renews (Subscriptions page).
+-- The daily cron reminds owners 14 days, 3 days and on the day. `reminded` holds the
+-- stages already sent, as 'YYYY-MM-DD:14'.
+-- ------------------------------------------------------------
+create table if not exists subscriptions (
+  id            bigint generated always as identity primary key,
+  name          text        not null,
+  amount        numeric     not null default 0,
+  currency      text        not null default 'MYR',
+  cycle         text        not null default 'monthly' check (cycle in ('monthly', 'yearly', 'once')),
+  next_renewal  date        not null,
+  where_invoice text,
+  notes         text,
+  active        boolean     not null default true,
+  reminded      text[]      not null default '{}',
+  updated_at    timestamptz not null default now()
+);
+alter table subscriptions enable row level security;
+insert into subscriptions (name, amount, currency, cycle, next_renewal, where_invoice, notes, active)
+select * from (values
+  ('ChatGPT Business (3 seats)', 0, 'USD', 'monthly', date '2026-11-26', 'chatgpt.com → Settings → Billing', 'Amount not in the renewal email: fill it in', true),
+  ('Google AI Plus (Google One 400 GB)', 239.90, 'MYR', 'yearly', date '2027-09-26', 'Google Play → Order history', 'Mastercard 1976', true),
+  ('Vercel Pro (CashFlowOS app)', 20, 'USD', 'monthly', date '2026-12-01', 'vercel.com → Settings → Billing → Invoices', 'Upgrade before December, then set the real date', false),
+  ('Supabase Pro (CashFlowOS database)', 25, 'USD', 'monthly', date '2026-12-01', 'supabase.com → Organization → Billing → Invoices', 'Upgrade before December, then set the real date', false)
+) as v(name, amount, currency, cycle, next_renewal, where_invoice, notes, active)
+where not exists (select 1 from subscriptions);

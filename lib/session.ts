@@ -21,6 +21,7 @@ export type AppUser = {
   extra_tabs: string[]
   telegram_id: number | null
   active: boolean
+  can_send_bills?: boolean // off: their bill photos are refused (owners always may)
   must_change_password: boolean
 }
 

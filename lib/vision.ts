@@ -1,4 +1,5 @@
 import 'server-only'
+import { alertIfAiDown } from './notify'
 import Anthropic from '@anthropic-ai/sdk'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -79,6 +80,7 @@ export async function readImage(base64: string, mime: string): Promise<VisionRes
     raw = res.content.find(c => c.type === 'text')?.text ?? ''
   } catch (e) {
     console.error('[CFO] vision call failed:', e)
+    await alertIfAiDown(e)
     return unsure()
   }
 

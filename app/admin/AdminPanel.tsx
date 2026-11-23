@@ -11,6 +11,7 @@ export type PanelUser = {
   extra_tabs: string[]
   telegram_id: number | null
   active: boolean
+  can_send_bills: boolean | null
 }
 
 type Result = { ok: boolean; message: string; tempPassword?: string }
@@ -57,6 +58,7 @@ function UserRow({ user, onResult }: { user: PanelUser; onResult: (r: Result) =>
   const [role, setRole] = useState(user.role)
   const [extras, setExtras] = useState(user.extra_tabs)
   const [telegramId, setTelegramId] = useState(user.telegram_id ? String(user.telegram_id) : '')
+  const [bills, setBills] = useState(user.can_send_bills !== false)
   const [pending, start] = useTransition()
 
   const run = (action: () => Promise<Result>) => start(async () => onResult(await action()))
@@ -77,6 +79,10 @@ function UserRow({ user, onResult }: { user: PanelUser; onResult: (r: Result) =>
         {ROLES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
       </select>
       <input className="login-input" inputMode="numeric" placeholder="Telegram ID" value={telegramId} onChange={e => setTelegramId(e.target.value)} style={selectStyle} />
+      <label className="admin-tab" style={{ marginTop: 10 }}>
+        <input type="checkbox" checked={role === 'owner' || bills} disabled={role === 'owner'} onChange={() => setBills(b => !b)} />
+        Can send bills to the bot (Telegram photos and PDFs)
+      </label>
       <div className="admin-tabs">
         {GRANTABLE_TABS.map(tab => {
           const locked = fromRole(tab.href)
@@ -94,7 +100,7 @@ function UserRow({ user, onResult }: { user: PanelUser; onResult: (r: Result) =>
         })}
       </div>
       <div className="btnrow" style={{ flexWrap: 'wrap' }}>
-        <button className="btn" type="button" disabled={pending} onClick={() => run(() => updateUser(user.id, { role, extraTabs: extras, telegramId }))}>
+        <button className="btn" type="button" disabled={pending} onClick={() => run(() => updateUser(user.id, { role, extraTabs: extras, telegramId, canSendBills: bills }))}>
           Save
         </button>
         <button className="btn ghost" type="button" disabled={pending} onClick={() => run(() => resetPassword(user.id))}>

@@ -1,4 +1,5 @@
 import 'server-only'
+import { alertIfAiDown } from './notify'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from './supabase'
 
@@ -28,6 +29,7 @@ export async function askAI(system: string, messages: { role: 'user' | 'assistan
     return res.content.find(c => c.type === 'text')?.text?.trim() || null
   } catch (e) {
     console.error('[CFO] AI call failed:', e)
+    await alertIfAiDown(e)
     return null
   }
 }

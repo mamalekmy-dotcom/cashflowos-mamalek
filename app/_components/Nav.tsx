@@ -15,6 +15,7 @@ export const NAV_GROUPS: { label: string; tabs: { href: string; label: string }[
     { href: '/flr', label: 'FLR Report' },
     { href: '/cogs', label: 'COGS Report' },
     { href: '/mgmt', label: 'Management Report' },
+    { href: '/subscriptions', label: 'Subscriptions' },
   ] },
   { label: 'Work', tabs: [
     { href: '/content', label: 'Content' },

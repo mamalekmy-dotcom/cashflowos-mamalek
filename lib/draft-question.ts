@@ -11,7 +11,7 @@ import { todayISO } from './records'
 export type Choice = { value: string; label: string }
 export type DraftQuestion = {
   id: number
-  kind: 'supplier' | 'item' | 'expense' | 'ready'
+  kind: 'duplicate' | 'supplier' | 'item' | 'expense' | 'ready'
   ask: string
   choices: Choice[]
 }
@@ -29,6 +29,13 @@ export async function draftQuestions(drafts: { id: number; payload: any }[]): Pr
     if (!bill) continue
     const ctx = ctxs.get(ymOf(bill.date || todayISO()))!
     const id = d.id
+    if (d.payload.dupOf && !d.payload.dupOk) {
+      out.set(id, {
+        id, kind: 'duplicate', ask: `No invoice no., and it looks the same as another bill: ${String(d.payload.dupOf).replace(/<[^>]+>/g, '')}. Same bill sent twice?`,
+        choices: [{ value: `smd:${id}:d`, label: 'Duplicate, skip it' }, { value: `smd:${id}:r`, label: 'Real 2nd bill, record it' }],
+      })
+      continue
+    }
     const supplier = bill.supplier ? matchSupplier(ctx, bill.supplier) : null
     if (!supplier) {
       out.set(id, {

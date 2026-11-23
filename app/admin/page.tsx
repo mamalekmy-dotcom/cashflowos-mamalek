@@ -8,7 +8,7 @@ export default async function Admin() {
   await requireOwner()
   const { data } = await supabase
     .from('app_users')
-    .select('id, name, email, role, extra_tabs, telegram_id, active')
+    .select('id, name, email, role, extra_tabs, telegram_id, active, can_send_bills')
     .order('active', { ascending: false })
     .order('name')
 

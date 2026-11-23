@@ -10,6 +10,7 @@ import {
 } from './stock-logic'
 import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
 import { categories, categoryKeyboard } from './expenses'
+import { alertIfAiDown } from './notify'
 
 // Supplier bill to stock sheet, from Telegram or the app's Scan page. Nothing reaches
 // the sheet until an owner taps Approve.
@@ -17,7 +18,8 @@ import { categories, categoryKeyboard } from './expenses'
 type Sender = { chatId: number; approvalChat: number; name: string; fromId: unknown }
 // A Telegram bill carries its fileId and message; a Scan bill its file in the vault bucket.
 // `expense` is the Management Report category for the bill's Others lines, once picked.
-type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any; expense?: string }
+// `dupOf` is the look-alike bill the owner is asked about; `dupOk` once they say it's a real second bill.
+type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any; expense?: string; dupOf?: string; dupOk?: boolean }
 
 const OTHERS = 'OTHERS'
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -43,8 +45,9 @@ export async function runStockPipeline(msg: any, sender: Sender): Promise<boolea
   if (!file || !apiKey) return false
   const base64 = await fileBase64(file.fileId)
   if (!base64) return false
-  const bill = await readBill(base64, file.mime, apiKey).catch(e => {
+  const bill = await readBill(base64, file.mime, apiKey).catch(async e => {
     console.error('[CFO] bill read failed:', e)
+    await alertIfAiDown(e)
     return null
   })
   if (!bill || bill.type === 'other') return false
@@ -71,8 +74,9 @@ export async function runScanPipeline(args: {
 export async function readScannedBill(base64: string, mime: string): Promise<Bill | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!apiKey || !stockConfigured()) return null
-  const bill = await readBill(base64, mime, apiKey).catch(e => {
+  const bill = await readBill(base64, mime, apiKey).catch(async e => {
     console.error('[CFO] scan bill read failed:', e)
+    await alertIfAiDown(e)
     return null
   })
   return bill?.type === 'bill' ? bill : null
@@ -112,6 +116,22 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return "Couldn't read the items or total. Please take the photo again, showing the whole bill."
   }
 
+  // No usable invoice number: a bill with the same date, amount and items (any shop name,
+  // since handwriting is read differently) may be the same bill sent twice, or a real
+  // second delivery. Ask, never decide alone.
+  if (!draft.dupOk && !hasInvoiceNo(bill)) {
+    const twin = await lookalike(bill, ctx, draftId)
+    if (twin) {
+      draft.dupOf = twin
+      const id = draftId ?? (await saveDraft(draft))
+      if (id) {
+        if (draftId) await supabase.from('agent_actions').update({ payload: draft }).eq('id', id).eq('status', 'proposed')
+        await askDuplicate(id, draft, twin)
+      }
+      return 'Waiting for the owner: this may be a bill sent twice.'
+    }
+  }
+
   const supplier = matchSupplier(ctx, bill.supplier)
   if (!supplier) {
     const id = draftId ?? (await saveDraft(draft))
@@ -145,8 +165,9 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   }
 
   if (draftId) await closeDraft(draftId)
-  const key = billKey(supplier, bill)
-  if (ctx.log.some(l => l.key === key) || (await isPending(key))) {
+  // A real second bill the owner confirmed gets its own key, so the sheet doesn't refuse it.
+  const key = draft.dupOk ? `${billKey(supplier, bill)}-2nd-${randomUUID().slice(0, 6)}` : billKey(supplier, bill)
+  if (!draft.dupOk && (ctx.log.some(l => l.key === key) || (await isPending(key)))) {
     await sendMessage(sender.chatId, `📁 Already done: ${esc(supplier)} ${esc(bill.invoice)}. I didn't add it twice.`)
     return 'This bill was already sent in. Nothing was added twice.'
   }
@@ -199,6 +220,54 @@ async function sameInvoice(bill: Bill, ctx: Context, selfId?: number): Promise<s
     return row.status === 'proposed' ? 'waiting for Approve' : 'recorded'
   }
   return null
+}
+
+const hasInvoiceNo = (bill: Bill) => { const no = invoiceNo(bill.invoice); return no.length >= 4 && /\d/.test(no) }
+const cents = (n: unknown) => Math.round((Number(n) || 0) * 100)
+const amounts = (lines: { amount?: number | null }[] = []) => lines.map(l => cents(l.amount)).sort((a, b) => a - b).join(',')
+const sameBill = (a: { date?: string | null; total?: number | null; lines?: any[] }, b: Bill) =>
+  !!a.date && a.date === b.date && Math.abs(cents(a.total) - cents(b.total)) <= 1 &&
+  (!(a.lines?.length && b.lines.length) || amounts(a.lines) === amounts(b.lines))
+
+// Another bill with the same date, total and line amounts, from any shop name: recorded,
+// waiting for Approve, or waiting on a question. Says which, so the owner can tell them apart.
+async function lookalike(bill: Bill, ctx: Context, selfId?: number): Promise<string | null> {
+  if (!bill.date || !(Number(bill.total) > 0)) return null
+  const now = new Date().toISOString()
+  const { data } = await supabase.from('agent_actions').select('id, agent_key, status, expires_at, proposed_at, payload, result')
+    .in('agent_key', ['stock-receipt', 'stock-draft']).in('status', ['proposed', 'executed'])
+    .gt('proposed_at', new Date(Date.now() - 120 * 86_400_000).toISOString())
+  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+  for (const row of data ?? []) {
+    if (row.id === selfId) continue
+    if (row.status === 'proposed' && row.expires_at <= now) continue
+    if (row.result?.removed || row.result?.kind === 'stock_duplicate') continue
+    const p = row.payload ?? {}
+    if (row.agent_key === 'stock-draft') {
+      if (row.status !== 'proposed' || !p.bill || !sameBill(p.bill, bill)) continue
+      return `${esc(p.bill.supplier || 'a bill')} · ${rm(p.bill.total ?? 0)}, sent by ${esc(p.sender?.name || 'someone')} at ${when(row.proposed_at)}, still waiting for an answer`
+    }
+    if (!sameBill(p, bill)) continue
+    const state = row.status === 'proposed' ? 'waiting for Approve' : 'already recorded'
+    return `${esc(p.printed || p.supplier || 'a bill')} · ${rm(p.total ?? 0)}, sent by ${esc(p.sentBy || 'someone')} at ${when(row.proposed_at)}, ${state}`
+  }
+  // Keyed in the sheet's log before (same shop, date and total).
+  const supplier = matchSupplier(ctx, bill.supplier)
+  if (supplier && ctx.log.some(l => l.key === billKey(supplier, bill))) return `${esc(supplier)} · ${rm(bill.total ?? 0)}, already in the stock sheet`
+  return null
+}
+
+async function askDuplicate(id: number, draft: Draft, twin: string): Promise<void> {
+  await sendWithButtons(
+    draft.sender.approvalChat,
+    `${aboutBill(draft)}\n\n👯 This bill has no invoice no., and looks the same as another bill on ${shown(draft.bill.date!)}: same amount and items.\n` +
+      `Other bill: ${twin}.\n\nIs it the same bill sent twice?`,
+    rows([
+      { text: '🗑 Duplicate, skip it', callback_data: `smd:${id}:d` },
+      { text: '✅ Real 2nd bill, record it', callback_data: `smd:${id}:r` },
+    ]),
+    replyTo(draft),
+  )
 }
 
 // Handwritten cash bills get misread (28 read as 29). Lines whose price isn't the stock
@@ -482,6 +551,17 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
   const row = await loadDraft(id)
   if (!row) return { toast: 'Already handled.' }
   const draft = row.payload as Draft
+  if (verb === 'smd') {
+    if (a === 'd') {
+      await closeDraft(id)
+      await sendMessage(draft.sender.approvalChat, `🗑 Skipped as a duplicate: ${esc(draft.bill.supplier || 'bill')} ${rm(draft.bill.total ?? 0)} on ${draft.bill.date ? shown(draft.bill.date) : 'no date'}. Nothing was recorded twice.`)
+      return { toast: 'Skipped as a duplicate.' }
+    }
+    const next = { ...draft, dupOk: true }
+    await supabase.from('agent_actions').update({ payload: next }).eq('id', id).eq('status', 'proposed')
+    await advance(next, id)
+    return { toast: 'Recording it as a second bill.' }
+  }
   const ctx = await sheetContext(ymOf(draft.bill.date || todayISO()))
 
   if (verb === 'sms') {

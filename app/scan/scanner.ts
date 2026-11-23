@@ -23,25 +23,28 @@ export async function loadPhoto(file: File): Promise<HTMLCanvasElement> {
   return c
 }
 
-let cvReady: Promise<any> | null = null
-function loadCv(): Promise<any> {
+// OpenCV's module object has a then() that never settles cleanly, so it must never be
+// awaited or passed to resolve() directly: poll for cv.Mat and hand it back wrapped.
+let cvReady: Promise<{ cv: any }> | null = null
+function loadCv(): Promise<{ cv: any }> {
   if (cvReady) return cvReady
-  cvReady = new Promise((resolve, reject) => {
+  cvReady = new Promise<{ cv: any }>((resolve, reject) => {
     const w = window as any
-    const done = async () => {
-      let cv = w.cv
-      if (cv && typeof cv.then === 'function') cv = await cv
-      if (cv?.Mat) return resolve(cv)
-      if (cv) cv.onRuntimeInitialized = () => resolve(cv)
+    const started = Date.now()
+    const poll = () => {
+      const cv = w.cv
+      if (cv && cv.Mat && cv.imread) return resolve({ cv })
+      if (Date.now() - started > 45_000) return reject(new Error('scanner took too long'))
+      setTimeout(poll, 150)
     }
-    if (w.cv) return void done()
-    const s = document.createElement('script')
-    s.src = OPENCV_URL
-    s.async = true
-    s.onload = () => void done()
-    s.onerror = () => reject(new Error('scanner did not load'))
-    document.head.appendChild(s)
-    setTimeout(() => reject(new Error('scanner took too long')), 45_000)
+    if (!document.querySelector(`script[src="${OPENCV_URL}"]`)) {
+      const s = document.createElement('script')
+      s.src = OPENCV_URL
+      s.async = true
+      s.onerror = () => reject(new Error('scanner did not load'))
+      document.head.appendChild(s)
+    }
+    poll()
   }).catch(e => {
     cvReady = null
     throw e
@@ -67,7 +70,7 @@ function order(pts: Pt[]): Pt[] {
 export async function findCorners(photo: HTMLCanvasElement): Promise<{ corners: Pt[]; found: boolean }> {
   const W = photo.width, H = photo.height
   try {
-    const cv = await loadCv()
+    const { cv } = await loadCv()
     const scale = Math.min(1, 800 / Math.max(W, H))
     const small = document.createElement('canvas')
     small.width = Math.round(W * scale)

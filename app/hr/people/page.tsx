@@ -5,6 +5,8 @@ import { requireManager, visiblePeople } from '@/lib/hr/guard'
 import { isHR } from '@/lib/hr/rules'
 import { todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
+import { getSignupLink } from '@/lib/signup'
+import SignupLink from './SignupLink'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +26,7 @@ export default async function People({ searchParams }: { searchParams: Promise<{
   const all = data ?? []
   const people = left ? all : all.filter(p => p.employment_status !== 'left')
   const name = (id: number | null) => all.find(p => p.id === id)?.full_name ?? ''
+  const signup = ctx.viewer.appRole === 'owner' ? await getSignupLink() : null
 
   return (
     <>
@@ -31,11 +34,12 @@ export default async function People({ searchParams }: { searchParams: Promise<{
       <p className="cap">{people.length} {left ? 'including leavers' : 'current'} · <Link href={left ? '/hr/people' : '/hr/people?left=1'}>{left ? 'Hide leavers' : 'Show leavers'}</Link></p>
       <HRTabs active="/hr/people" hr={hr} />
 
+      {signup ? <SignupLink path={`/join/${signup.token}`} enabled={signup.enabled} /> : null}
       {ctx.viewer.appRole === 'owner' ? <AddStaff today={todayISO()} /> : null}
 
       {hr ? (add
         ? <PersonEditor
-            initial={{ full_name: '', preferred_name: '', department: '', position: '', career_level: '', manager_id: '', user_id: '', join_date: '', employment_status: 'probation', probation_end: '', next_review_date: '', phone: '', emergency_contacts: '' }}
+            initial={{ staff_no: '', full_name: '', preferred_name: '', department: '', position: '', career_level: '', manager_id: '', user_id: '', join_date: '', employment_status: 'probation', probation_end: '', next_review_date: '', phone: '', emergency_contacts: '' }}
             managers={all.map(p => ({ value: String(p.id), label: p.full_name }))}
             logins={(users ?? []).map(u => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
           />
@@ -43,11 +47,11 @@ export default async function People({ searchParams }: { searchParams: Promise<{
 
       {people.length ? (
         <table className="tbl">
-          <thead><tr><th>Staff ID</th><th>Name</th><th>Dept</th><th>Position</th><th>Status</th><th>Reports to</th></tr></thead>
+          <thead><tr><th>HR no.</th><th>Name</th><th>Dept</th><th>Position</th><th>Status</th><th>Reports to</th></tr></thead>
           <tbody>
             {people.map(p => (
               <tr key={p.id}>
-                <td data-label="Staff ID">{p.staff_no ?? ''}</td>
+                <td data-label="HR no.">{p.staff_no ?? <span className="cap">not set</span>}</td>
                 <td data-label="Name"><Link href={`/hr/people/${p.id}`}>{p.preferred_name || p.full_name}</Link>{p.is_demo ? ' (demo)' : ''}</td>
                 <td data-label="Dept">{p.department ?? ''}</td>
                 <td data-label="Position">{p.position ?? ''}</td>

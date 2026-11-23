@@ -338,6 +338,12 @@ async function handleMessage(msg: any): Promise<Response> {
 
   // Allowlist on the sender — fail closed and stay silent, so anyone not on the list
   // gets no reply at all, not even a refusal.
+  // /myid in a private chat: anyone may ask for their own Telegram ID, for the sign-up form.
+  if (msg.chat?.type === 'private' && /^\/myid\b/i.test((msg.text || '').trim())) {
+    await sendMessage(chatId, `Your Telegram ID: <code>${msg.from?.id}</code>\nCopy this number into the Mama Lek sign-up form.`)
+    return Response.json({ ok: true })
+  }
+
   const allowed = await isAllowed(msg.from?.id)
   const receiptOnly = !allowed && RECEIPT_SENDERS.includes(String(msg.from?.id))
   if (!allowed && !(receiptOnly && (msg.photo || msg.document))) return Response.json({ ok: true })

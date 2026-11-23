@@ -21,6 +21,7 @@ export type AppUser = {
   extra_tabs: string[]
   telegram_id: number | null
   active: boolean
+  username?: string | null // the login ID staff picked at sign-up
   can_send_bills?: boolean // off: their bill photos are refused (owners always may)
   must_change_password: boolean
 }
@@ -79,8 +80,11 @@ export async function userByEmail(email: string): Promise<AppUser | null> {
   return (data as AppUser | null) ?? null
 }
 
-// Staff log in with their ID (ML001). Supabase Auth only knows emails, so swap it first.
+// Staff log in with the login ID they picked at sign-up, or their HR number (ML001).
+// Supabase Auth only knows emails, so swap it first.
 export async function emailForStaffId(staffNo: string): Promise<string | null> {
+  const { data: own } = await supabase.from('app_users').select('email').eq('username', staffNo.trim().toLowerCase()).maybeSingle()
+  if (own?.email) return own.email as string
   const { data } = await supabase
     .from('hr_people')
     .select('app_users(email)')

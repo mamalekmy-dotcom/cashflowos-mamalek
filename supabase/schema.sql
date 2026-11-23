@@ -573,3 +573,8 @@ select * from (values
   ('Supabase Pro (CashFlowOS database)', 25, 'USD', 'monthly', date '2026-12-01', 'supabase.com → Organization → Billing → Invoices', 'Upgrade before December, then set the real date', false)
 ) as v(name, amount, currency, cycle, next_renewal, where_invoice, notes, active)
 where not exists (select 1 from subscriptions);
+
+-- ------------------------------------------------------------
+-- Staff sign-up (/join/<token>): the login ID staff pick for themselves.
+-- ------------------------------------------------------------
+alter table app_users add column if not exists username text unique;

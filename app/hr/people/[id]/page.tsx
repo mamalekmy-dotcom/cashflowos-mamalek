@@ -49,7 +49,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
       {hr ? (
         <PersonEditor
           initial={{
-            id, full_name: str(person.full_name), preferred_name: str(person.preferred_name), department: str(person.department),
+            id, staff_no: str(person.staff_no), full_name: str(person.full_name), preferred_name: str(person.preferred_name), department: str(person.department),
             position: str(person.position), career_level: str(person.career_level), manager_id: str(person.manager_id),
             user_id: str(person.user_id), join_date: str(person.join_date), employment_status: str(person.employment_status),
             probation_end: str(person.probation_end), next_review_date: str(person.next_review_date), phone: str(person.phone),

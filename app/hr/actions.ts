@@ -129,7 +129,7 @@ export async function addLedgerLine(personId: number, type: string, year: number
 
 // ---------------------------------------------------------------- people
 export type PersonForm = {
-  id?: number; full_name: string; preferred_name: string; department: string; position: string
+  id?: number; staff_no?: string; full_name: string; preferred_name: string; department: string; position: string
   career_level: string; manager_id: string; user_id: string; join_date: string; employment_status: string
   probation_end: string; next_review_date: string; phone: string; emergency_contacts: string
 }
@@ -197,14 +197,16 @@ export async function savePerson(f: PersonForm): Promise<Result & { id?: number 
     join_date: orNull(f.join_date), employment_status: f.employment_status, probation_end: orNull(f.probation_end),
     next_review_date: orNull(f.next_review_date), phone: orNull(f.phone),
     emergency_contacts: clean(f.emergency_contacts) ? [{ note: clean(f.emergency_contacts) }] : [],
+    // The owners' own HR number; blank leaves it unset.
+    ...(f.staff_no === undefined ? {} : { staff_no: clean(f.staff_no).toUpperCase() || null }),
     updated_at: new Date().toISOString(),
   }
   if (f.id && row.manager_id === f.id) return fail('Someone can’t report to themselves.')
   const q = f.id
     ? supabase.from('hr_people').update(row).eq('id', f.id).select('id').single()
-    : supabase.from('hr_people').insert({ ...row, staff_no: await newStaffNo() }).select('id').single()
+    : supabase.from('hr_people').insert({ ...row, staff_no: 'staff_no' in row ? row.staff_no : await newStaffNo() }).select('id').single()
   const { data, error } = await q
-  if (error) return fail(error.code === '23505' ? 'That login already belongs to another profile.' : error.message)
+  if (error) return fail(error.code === '23505' ? (/staff_no/.test(error.message) ? 'That HR number is already used by someone else.' : 'That login already belongs to another profile.') : error.message)
   await audit(ctx, f.id ? 'update' : 'create', 'hr_people', data.id, { fields: Object.keys(row) })
   refresh()
   return { ok: true, message: 'Saved.', id: data.id }

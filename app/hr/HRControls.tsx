@@ -190,6 +190,7 @@ export function PersonEditor({ initial, managers, logins }: { initial: PersonFor
       })
     }}>
       <p className="rowlabel">{f.id ? 'Profile' : 'New staff profile'}</p>
+      <Field label="HR number" value={f.staff_no ?? ''} onChange={set('staff_no')} placeholder="Your own number, e.g. ML002" />
       <Field label="Full name" value={f.full_name} onChange={set('full_name')} />
       <Field label="Preferred name" value={f.preferred_name} onChange={set('preferred_name')} />
       <Select label="Position" value={f.position} onChange={pickPosition} options={positions} blank="—" />

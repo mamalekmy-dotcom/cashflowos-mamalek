@@ -9,6 +9,7 @@ import { posConfigured } from '@/lib/geniuspos'
 import { syncPosDays } from '@/lib/pos-sync'
 import { syncStockSheet } from '@/lib/stock-import'
 import { pushMgmtSheet } from '@/lib/mgmt'
+import { keepJarvisAwake } from '@/lib/keep-awake'
 import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -70,6 +71,9 @@ export async function GET(req: Request) {
       .eq('status', 'proposed')
     proposed = (data ?? []) as any[]
   }
+
+  // Jarvis's own Supabase project pauses after 7 quiet days; one call a day keeps it up.
+  await keepJarvisAwake().then(r => console.log('[CFO] Jarvis keep-awake:', r)).catch(e => console.error('[CFO] Jarvis keep-awake failed:', e))
 
   // Yesterday's POS sales (and any day missed in the last week) before the brief reads them.
   if (posConfigured()) {

@@ -29,7 +29,17 @@ export async function punch(form: FormData): Promise<Result> {
   if (kind === 'in' && !hasPhoto) return { ok: false, message: 'Take a selfie first.' }
 
   const { data: pinRow } = await supabase.from('app_settings').select('value').eq('key', 'shop_pin').maybeSingle()
-  const pin = pinRow?.value as { lat: number; lng: number } | undefined
+  const pin = pinRow?.value as { lat: number; lng: number; radius?: number } | undefined
+
+  // Clocking in only works at the shop: within the pin's radius (set on Team Roster).
+  if (kind === 'in' && pin) {
+    const away = distanceMetres(lat, lng, pin.lat, pin.lng)
+    const limit = Number(pin.radius) || 50
+    if (away > limit) {
+      const far = away >= 1000 ? `${(away / 1000).toFixed(1)} km` : `${Math.round(away)} m`
+      return { ok: false, message: `You're ${far} from the shop. Clock in when you're at Mama Lek (within ${limit} m). If you are at the shop, step outside for a better GPS signal and try again.` }
+    }
+  }
 
   let photo_path: string | null = null
   if (hasPhoto) {

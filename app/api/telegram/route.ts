@@ -514,6 +514,13 @@ async function handleMessage(msg: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
+  // Questions (sales, COGS, money) and robot commands are for owners. Staff only send
+  // bills, so they get a short note instead of an answer.
+  if (!(await isOwner(msg.from?.id))) {
+    await sendMessage(chatId, '📸 I only take bills from you: send the photo or PDF. Questions about sales and money are for the owners.')
+    return Response.json({ ok: true })
+  }
+
   // /<agent-key> — call ONE robot by name, on demand. Runs the exact same check()
   // the morning cron runs, so the buttons show up now instead of tomorrow 9am.
   // (/start, /help and /undo are matched above, so they never reach this.)

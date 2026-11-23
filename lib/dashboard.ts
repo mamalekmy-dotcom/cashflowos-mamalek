@@ -2,7 +2,7 @@ import 'server-only'
 import { cache } from 'react'
 import { supabase } from './supabase'
 import { inCogs } from './cogs-rule'
-import { daysIn } from './flr'
+import { daysIn, lastKnownCosts, monthName } from './flr'
 import { FOOD_BASIS_LABEL, foodRates } from './daily-cogs'
 import { posConfigured, posDays } from './geniuspos'
 
@@ -128,15 +128,18 @@ export async function costsUpTo(day: string, today: string) {
     foodNote = `Food cost is an estimate until this month's stock count is done: nett sales x ${(rate.rate * 100).toFixed(1)}%, ${FOOD_BASIS_LABEL[rate.basis]}.`
   }
 
-  const fullLabour = keyed ? Number(keyed.labour) : Number(tms?.labor ?? 0)
-  const fullRent = keyed ? Number(keyed.rent) : Number(tms?.rent ?? 0)
+  // Salaries come early next month; until then last month's stand in, marked as an estimate.
+  const guess = keyed || tms ? null : await lastKnownCosts(month)
+  const fullLabour = keyed ? Number(keyed.labour) : tms ? Number(tms.labor ?? 0) : guess?.labour ?? 0
+  const fullRent = keyed ? Number(keyed.rent) : tms ? Number(tms.rent ?? 0) : guess?.rent ?? 0
+  const estimatedFrom = guess ? monthName(guess.month) : null
   const labour = fullLabour * share
   const rent = fullRent * share
   const total = food + labour + rent
   return {
     day, month, dayNo, days: daysIn(month), live,
     netSales: round(netSales), food: round(food), foodFrom, foodNote, labour: round(labour), rent: round(rent), total: round(total),
-    costsKeyed: Boolean(keyed || tms),
+    costsKeyed: Boolean(keyed || tms || guess), estimatedFrom,
     flrPercent: netSales ? (total / netSales) * 100 : null,
   }
 }

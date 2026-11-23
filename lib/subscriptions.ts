@@ -89,3 +89,20 @@ export async function sendRenewalReminders(today = todayISO()): Promise<{ sent: 
   }
   return { sent, rolled }
 }
+
+// Salaries are paid early each month for the month before. On the 3rd, 5th and 7th,
+// until last month's labour is keyed in on the FLR Report, the owners get a nudge.
+export async function salaryReminder(today = todayISO()): Promise<boolean> {
+  const day = Number(today.slice(8, 10))
+  if (![3, 5, 7].includes(day)) return false
+  const [y, m] = today.split('-').map(Number)
+  const last = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7)
+  const { data } = await supabase.from('monthly_costs').select('labour').eq('month', last).maybeSingle()
+  if (data && Number(data.labour) > 0) return false
+  const name = new Date(`${last}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  await tellOwners(
+    `💼 <b>Key in ${name} salaries</b>: the total labour cost, and rental.\n` +
+      `App → FLR Report → ${name} → Labour and Rental → Save. Until then FLR and the Management Report use an estimate.`,
+  )
+  return true
+}

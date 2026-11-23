@@ -58,8 +58,8 @@ export async function mgmtFor(month: string, today: string) {
   }
 
   const lines: Line[] = [
-    { key: 'salaries', label: 'Salaries', amount: f.labour },
-    { key: 'rental', label: 'Rental', amount: f.rent },
+    { key: 'salaries', label: f.estimatedFrom ? `Salaries (estimate from ${f.estimatedFrom})` : 'Salaries', amount: f.labour },
+    { key: 'rental', label: f.estimatedFrom ? `Rental (estimate from ${f.estimatedFrom})` : 'Rental', amount: f.rent },
     ...cats.map(c => {
       const k = (keyed.get(c.id) ?? 0) * share
       const b = billed.get(c.id) ?? 0

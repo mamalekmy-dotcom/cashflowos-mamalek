@@ -13,6 +13,22 @@ export const daysIn = (month: string) => {
 }
 const isFood = inCogs
 
+// Salaries are paid early the next month, so a month's labour (and its rental, keyed
+// with it) is only known then. Until then the last month with real figures stands in,
+// marked as an estimate, so the FLR isn't food cost alone.
+export const monthName = (month: string) =>
+  new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+export async function lastKnownCosts(before: string): Promise<{ month: string; labour: number; rent: number } | null> {
+  const [{ data: keyed }, { data: tms }] = await Promise.all([
+    supabase.from('monthly_costs').select('month, labour, rent').lt('month', before).gt('labour', 0).order('month', { ascending: false }).limit(1),
+    supabase.from('monthly_pnl').select('month, labor, rent').lt('month', before).gt('labor', 0).order('month', { ascending: false }).limit(1),
+  ])
+  const k = keyed?.[0]
+  const t = tms?.[0]
+  if (k && (!t || k.month >= t.month)) return { month: k.month, labour: Number(k.labour), rent: Number(k.rent) }
+  return t ? { month: t.month, labour: Number(t.labor), rent: Number(t.rent) } : null
+}
+
 export type FlrHealth = 'healthy' | 'border' | 'unhealthy'
 export function flrHealth(percent: number): FlrHealth {
   const shown = Math.round(percent * 10) / 10 // judged on the figure shown on screen
@@ -59,9 +75,12 @@ export async function flrFor(month: string, today: string) {
       ? `${foodBills} bill${foodBills === 1 ? '' : 's'} approved on Telegram, ingredients only`
       : sheetFood ? 'food purchases in Stock 2026' : 'no ingredient bills yet'
 
-  const fullLabour = keyed ? Number(keyed.labour) : Number(tms?.labor ?? 0)
-  const fullRent = keyed ? Number(keyed.rent) : Number(tms?.rent ?? 0)
-  const costsFrom = keyed ? 'keyed in' : tms ? 'from the TMS report' : 'not keyed in yet'
+  const guess = keyed || tms ? null : await lastKnownCosts(month)
+  const fullLabour = keyed ? Number(keyed.labour) : tms ? Number(tms.labor ?? 0) : guess?.labour ?? 0
+  const fullRent = keyed ? Number(keyed.rent) : tms ? Number(tms.rent ?? 0) : guess?.rent ?? 0
+  const estimatedFrom = guess ? monthName(guess.month) : null
+  const costsFrom = keyed ? 'keyed in' : tms ? 'from the TMS report'
+    : guess ? `an estimate from ${estimatedFrom} until this month's salaries are keyed in` : 'not keyed in yet'
 
   // This month is still running, so labour and rental count only for the days with sales
   // so far. Otherwise a full month's wages sit against two days of sales.
@@ -75,7 +94,7 @@ export async function flrFor(month: string, today: string) {
 
   return {
     netSales, food, foodFrom, costsFrom, running, daysSoFar,
-    keyedLabour: keyed ? Number(keyed.labour) : null, keyedRent: keyed ? Number(keyed.rent) : null,
+    keyedLabour: keyed ? Number(keyed.labour) : null, keyedRent: keyed ? Number(keyed.rent) : null, estimatedFrom,
     fullLabour, fullRent, labour, rent, flr,
     flrPercent: netSales ? (flr / netSales) * 100 : null,
   }

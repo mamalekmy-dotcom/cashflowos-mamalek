@@ -142,7 +142,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <p className="rowlabel">FLR · {monthOf(flrDay)}, {upTo(flrDay, flr.dayNo)}</p>
             <DayPicker param="flr" day={flrDay} today={today} yesterday={yesterday} />
           </div>
-          <HealthStrip percent={flr.flrPercent} href="/flr" />
+          <HealthStrip percent={flr.flrPercent} href="/flr" label={flr.estimatedFrom ? `labour est. from ${flr.estimatedFrom}` : undefined} />
         </>
       ) : null}
 
@@ -155,11 +155,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
           <div className="grid">
             <Stat label="Food cost" value={share(costs.food)} sub={`${rm(costs.food)} · ${costs.foodFrom}`} href="/cogs" />
-            <Stat label="Labour cost" value={share(costs.labour)} sub={costs.costsKeyed ? rm(costs.labour) : 'Not keyed in yet'} href="/flr" />
-            <Stat label="Rental cost" value={share(costs.rent)} sub={costs.costsKeyed ? rm(costs.rent) : 'Not keyed in yet'} href="/flr" />
+            <Stat label="Labour cost" value={share(costs.labour)} sub={!costs.costsKeyed ? 'Not keyed in yet' : costs.estimatedFrom ? `${rm(costs.labour)} · estimate from ${costs.estimatedFrom}` : rm(costs.labour)} href="/flr" />
+            <Stat label="Rental cost" value={share(costs.rent)} sub={!costs.costsKeyed ? 'Not keyed in yet' : costs.estimatedFrom ? `${rm(costs.rent)} · estimate from ${costs.estimatedFrom}` : rm(costs.rent)} href="/flr" />
             <Stat label="Total cost" value={share(costs.total)} sub={`${rm(costs.total)} of ${rm(costs.netSales)} nett sales`} />
           </div>
           {costs.foodNote ? <p className="cap">{costs.foodNote}</p> : null}
+          {costs.estimatedFrom ? <p className="cap">Salaries are paid early next month, so labour and rental use {costs.estimatedFrom}&apos;s figures until this month&apos;s are keyed in on the FLR Report.</p> : null}
           {costs.costsKeyed && costs.dayNo < costs.days ? <p className="cap">Labour and rental count {costs.dayNo} of {costs.days} days of the month.</p> : null}
         </>
       ) : null}

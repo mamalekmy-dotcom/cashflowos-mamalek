@@ -10,7 +10,7 @@ import { syncPosDays } from '@/lib/pos-sync'
 import { syncStockSheet } from '@/lib/stock-import'
 import { pushMgmtSheet } from '@/lib/mgmt'
 import { keepJarvisAwake } from '@/lib/keep-awake'
-import { sendRenewalReminders } from '@/lib/subscriptions'
+import { salaryReminder, sendRenewalReminders } from '@/lib/subscriptions'
 import { JARVIS } from '@/jarvis/config'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -75,6 +75,9 @@ export async function GET(req: Request) {
 
   // Subscriptions and servers renewing in 14 days, 3 days or today.
   await sendRenewalReminders(today).then(r => console.log('[CFO] renewals:', r)).catch(e => console.error('[CFO] renewal reminders failed:', e))
+
+  // Last month's salaries, on the 3rd, 5th and 7th until they're keyed in.
+  await salaryReminder(today).catch(e => console.error('[CFO] salary reminder failed:', e))
 
   // Jarvis's own Supabase project pauses after 7 quiet days; one call a day keeps it up.
   await keepJarvisAwake().then(r => console.log('[CFO] Jarvis keep-awake:', r)).catch(e => console.error('[CFO] Jarvis keep-awake failed:', e))

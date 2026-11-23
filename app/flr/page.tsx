@@ -27,8 +27,8 @@ export default async function FlrReport({ searchParams }: { searchParams: Promis
   const balance = f.netSales - f.flr
   const slices: Slice[] = [
     { key: 'food', label: 'Food', amount: f.food, color: 'var(--clay)' },
-    { key: 'labour', label: 'Labour', amount: f.labour, color: 'var(--f-views)' },
-    { key: 'rent', label: 'Rental', amount: f.rent, color: 'var(--honey)' },
+    { key: 'labour', label: f.estimatedFrom ? `Labour (est. from ${f.estimatedFrom})` : 'Labour', amount: f.labour, color: 'var(--f-views)' },
+    { key: 'rent', label: f.estimatedFrom ? `Rental (est. from ${f.estimatedFrom})` : 'Rental', amount: f.rent, color: 'var(--honey)' },
     { key: 'balance', label: 'Balance', amount: balance, color: 'var(--sage)' },
   ]
     .map(s => ({ ...s, percent: pct(s.amount), money: money(s.amount), amount: Math.max(s.amount, 0) }))
@@ -77,7 +77,7 @@ export default async function FlrReport({ searchParams }: { searchParams: Promis
         {f.running ? ` Counted for ${f.daysSoFar} of ${daysIn(month)} days so far, to match the sales.` : ''}
       </p>
 
-      <CostsForm key={month} month={month} label={monthLabel(month)} labour={f.keyedLabour ?? f.fullLabour} rent={f.keyedRent ?? f.fullRent} />
+      <CostsForm key={month} month={month} label={monthLabel(month)} labour={f.keyedLabour ?? (f.estimatedFrom ? 0 : f.fullLabour)} rent={f.keyedRent ?? (f.estimatedFrom ? 0 : f.fullRent)} />
     </>
   )
 }

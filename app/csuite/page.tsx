@@ -4,6 +4,8 @@ import { todayISO } from '@/lib/records'
 import { financeReadout } from '@/lib/finance-head'
 import { FINANCE_HEAD as F } from '@/agents/finance-head/definition'
 import CsuiteMap from './CsuiteMap'
+import NameForm from './NameForm'
+import { getAssistantName } from '@/lib/assistant-name'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,12 +38,13 @@ async function recentDecisions() {
 
 export default async function Csuite() {
   const today = todayISO()
-  const [{ readings, alarms }, decisions] = await Promise.all([
+  const [{ readings, alarms }, decisions, name] = await Promise.all([
     financeReadout(today).catch(e => {
       console.error('[CFO] finance readout failed:', e)
       return { readings: [], alarms: [] }
     }),
     recentDecisions(),
+    getAssistantName(),
   ])
 
   return (
@@ -49,7 +52,8 @@ export default async function Csuite() {
       <h1 className="ph">AI C Suite 🏛️</h1>
       <p className="cap">You&apos;re the CEO. Your heads read the numbers and bring you one recommendation each. You keep every YES.</p>
 
-      <CsuiteMap findings={alarms.map(a => a.s.title)} live={['finance']} />
+      <NameForm name={name} />
+      <CsuiteMap findings={alarms.map(a => a.s.title)} live={['finance']} name={name} />
 
       <section className="cs-card">
         <p className="ac-name">

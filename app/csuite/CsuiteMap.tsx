@@ -36,7 +36,7 @@ const line = (a: Pt, b: Pt) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`
 
 type Step = { at: Spot; text: string; tone: 'clay' | 'sage' | 'dim'; hot?: Spot }
 
-export default function CsuiteMap({ findings, live }: { findings: string[]; live: HeadKey[] }) {
+export default function CsuiteMap({ findings, live, name = 'Jarvis Oyen' }: { findings: string[]; live: HeadKey[]; name?: string }) {
   const [narrow, setNarrow] = useState(false)
   const [still, setStill] = useState(false)
   const [step, setStep] = useState(0)
@@ -101,7 +101,7 @@ export default function CsuiteMap({ findings, live }: { findings: string[]; live
   return (
     <div className="cs-stage">
       <svg viewBox={`0 0 ${L.w} ${L.h}`} className={`cs-svg${narrow ? ' narrow' : ''}`} role="img"
-        aria-label={`Jarvis Oyen links you to 4 AI heads. Live: ${live.join(', ')}. ${found ? `Finance found: ${findings.join('; ')}` : 'Finance: all lines OK.'}`}>
+        aria-label={`${name} links you to 4 AI heads. Live: ${live.join(', ')}. ${found ? `Finance found: ${findings.join('; ')}` : 'Finance: all lines OK.'}`}>
         {/* The links. */}
         <path d={line(P.you, P.jarvis)} className={`cs-link live${now.hot === 'you' ? ' hot' : ''}`} />
         {HEADS.map(h => (
@@ -127,7 +127,7 @@ export default function CsuiteMap({ findings, live }: { findings: string[]; live
           {!still && <circle cx={P.jarvis.x} cy={P.jarvis.y} r={R_JARVIS} className="cs-ring jarvis" />}
           <circle cx={P.jarvis.x} cy={P.jarvis.y} r={R_JARVIS} className="cs-jarvis" />
           <text x={P.jarvis.x} y={P.jarvis.y + 2} className="cs-emoji big">🐱</text>
-          <text x={P.jarvis.x} y={P.jarvis.y + R_JARVIS + 20} className="cs-name">Jarvis Oyen</text>
+          <text x={P.jarvis.x} y={P.jarvis.y + R_JARVIS + 20} className="cs-name">{name}</text>
           <text x={P.jarvis.x} y={P.jarvis.y + R_JARVIS + 36} className="cs-sub">chief of staff</text>
         </g>
 

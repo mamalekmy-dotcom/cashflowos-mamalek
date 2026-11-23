@@ -332,13 +332,16 @@ function trashInvoice(req) {
 function migrateInvoiceFolders() {
   const root = DriveApp.getFolderById(INVOICES_FOLDER_ID)
   root.setName(yearFolderName(2026))
+  // Whole folders move in one step; only a name already there is merged file by file.
   const moveInto = (from, to) => {
     const files = from.getFiles()
     while (files.hasNext()) files.next().moveTo(to)
     const subs = from.getFolders()
     while (subs.hasNext()) {
       const sub = subs.next()
-      moveInto(sub, subFolder(to, sub.getName()))
+      const there = to.getFoldersByName(sub.getName())
+      if (!there.hasNext()) { sub.moveTo(to); continue }
+      moveInto(sub, there.next())
       sub.setTrashed(true)
     }
   }

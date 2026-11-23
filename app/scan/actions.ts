@@ -6,6 +6,8 @@ import { getCurrentUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { readImage } from '@/lib/vision'
 import { readScannedBill, runScanPipeline } from '@/lib/stock-pipeline'
+import { duplicateNote, rememberFile, seenBefore } from '@/lib/seen-files'
+import { billToDrive } from '@/lib/invoice-drive'
 
 type Result = { ok: boolean; message: string }
 
@@ -23,6 +25,12 @@ export async function scanDocument(form: FormData): Promise<Result> {
   if (!(file instanceof File) || file.size === 0) return { ok: false, message: 'Take a photo or choose a file.' }
   if (file.size > MAX_BYTES) return { ok: false, message: 'That file is over 8 MB.' }
   if (!ALLOWED.has(file.type)) return { ok: false, message: 'Use a photo or PDF.' }
+
+  // The exact same photo or file sent before (the phone sends a fingerprint of the originals).
+  const hash = String(form.get('hash') || '').replace(/[^a-f0-9]/g, '').slice(0, 64)
+  const seenKey = hash.length === 64 ? `app:${hash}` : ''
+  const seen = await seenBefore(seenKey)
+  if (seen) return { ok: false, message: duplicateNote(seen).replace(/^📁 /, '') }
 
   const bytes = Buffer.from(await file.arrayBuffer())
   const path = `scans/${randomUUID()}`
@@ -44,6 +52,7 @@ export async function scanDocument(form: FormData): Promise<Result> {
     }).select('id').single()
     if (error || !doc) return { ok: false, message: error?.message ?? 'Could not save the scan.' }
     const status = await runScanPipeline({ bill, mime: file.type, storagePath: path, scanDocId: doc.id, staffName: user.name })
+    await rememberFile(seenKey, `${bill.supplier || 'bill'} RM ${bill.total ?? '?'}`, user.name)
     revalidatePath('/scan')
     revalidatePath('/docs')
     return { ok: true, message: `Read ${bill.supplier || 'the bill'}, ${bill.lines.length} items, RM ${bill.total ?? '?'}. ${status}` }
@@ -65,6 +74,11 @@ export async function scanDocument(form: FormData): Promise<Result> {
     created_by: user.id,
   })
   if (error) return { ok: false, message: error.message }
+  await rememberFile(seenKey, `${read?.merchant || 'document'}${read?.amount ? ` RM ${read.amount}` : ''}`, user.name)
+  // A bill with an amount (cleaning, repairs…) goes to Drive by supplier as well.
+  if (read?.merchant && typeof read.amount === 'number' && read.amount > 0) {
+    await billToDrive({ base64: bytes.toString('base64'), mime: file.type, date: read.date, printed: read.merchant, total: read.amount })
+  }
   revalidatePath('/scan')
   revalidatePath('/docs')
   const unsure = !read || read.confidence === 'low'

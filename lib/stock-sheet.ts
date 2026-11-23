@@ -43,3 +43,6 @@ export const writeReceipt = (receipt: Record<string, unknown>) =>
 // Rewrites the "Mama Lek Management Report 2026" Google Sheet (same Apps Script).
 export const writeMgmtSheet = (body: { summary: (string | number)[][]; months: { month: string; rows: (string | number)[][] }[] }) =>
   call<{ months: number; link: string }>('mgmtReport', body)
+// Bills to Google Drive on upload, and out again when rejected (same Apps Script).
+export const saveInvoice = (body: Record<string, unknown>) => call<{ fileId: string; link: string }>('saveInvoice', body)
+export const trashInvoice = (fileId: string) => call<{ trashed: boolean }>('trashInvoice', { fileId })

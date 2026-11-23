@@ -22,6 +22,8 @@ import { jarvisIdentity, jarvisName } from '@/jarvis/config'
 import { logRun } from '@/lib/runs'
 import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
 import { runStockPipeline, answerStockQuestion, answerStockCategory, answerTypedRow, typeRowPrompt, typedRowFor, useSheetPrices } from '@/lib/stock-pipeline'
+import { duplicateNote, rememberFile, seenBefore } from '@/lib/seen-files'
+import { billToDrive } from '@/lib/invoice-drive'
 import { categories, categoryNamed, fileWithCategory, proposeExpense, typePrompt, typedFor } from '@/lib/expenses'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -762,6 +764,15 @@ async function answerWithTools(chatId: number, text: string, apiKey: string, fro
 // Supplier bills go to the stock sheet. Anything else takes the normal Vault path.
 async function fileIncoming(msg: any, receiptOnly: boolean): Promise<void> {
   const chatId = msg.chat?.id
+  // The exact same Telegram file again (forwarded or re-sent): stop before reading it.
+  const unique = msg.photo?.length ? msg.photo[msg.photo.length - 1].file_unique_id : msg.document?.file_unique_id
+  const seenKey = unique ? `tg:${unique}` : ''
+  const seen = await seenBefore(seenKey)
+  if (seen) {
+    await sendMessage(chatId, duplicateNote(seen))
+    return
+  }
+  const sentBy = msg.from?.first_name || String(msg.from?.id || '')
   if (stockConfigured()) {
     const used = await bumpDailyCounter(chatId, 'bill', todayISO())
     if (used > BILL_DAILY_CAP) {
@@ -775,7 +786,10 @@ async function fileIncoming(msg: any, receiptOnly: boolean): Promise<void> {
         name: msg.from?.first_name || String(msg.from?.id),
         fromId: msg.from?.id,
       }
-      if (await runStockPipeline(msg, sender)) return
+      if (await runStockPipeline(msg, sender)) {
+        await rememberFile(seenKey, 'bill', sentBy)
+        return
+      }
     } catch (e) {
       console.error('[CFO] stock pipeline failed:', e)
       await sendMessage(chatId, '⚠️ I could not reach the stock sheet. Nothing was recorded. Please send the bill again.')
@@ -787,6 +801,7 @@ async function fileIncoming(msg: any, receiptOnly: boolean): Promise<void> {
     return
   }
   await runVaultPipeline(msg)
+  await rememberFile(seenKey, 'document', sentBy)
 }
 
 async function runVaultPipeline(msg: any): Promise<void> {
@@ -903,6 +918,7 @@ async function runVaultPipeline(msg: any): Promise<void> {
   if (isExpense) {
     const proposalChat = await approvalChat(msg.from?.id, chatId)
     const id = await proposeExpense({ payload, chatId: proposalChat, text: buildProposalText(v, threshold()) })
+    if (id) await billToDrive({ base64, mime, date: v.date, printed: v.merchant, total: v.amount })
     if (!id) await sendMessage(chatId, '📁 Already waiting on a category for this one. Check the buttons above.')
     else if (proposalChat !== chatId) await sendMessage(chatId, '📁 Got it. An owner will pick the category.')
     return

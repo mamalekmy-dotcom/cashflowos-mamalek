@@ -3,7 +3,8 @@ import { getCurrentUser } from '@/lib/auth'
 import { rm, todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
 import { NOT_STOCK } from '@/lib/stock-logic'
-import { ClaimForm, ScanForm } from './ScanForms'
+import { ClaimForm } from './ScanForms'
+import BillScanner from './BillScanner'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // reading a bill and asking the owner takes a few seconds
@@ -46,7 +47,7 @@ export default async function Scan() {
     <>
       <h1 className="ph">Scan</h1>
       <p className="cap">Send in invoices, receipts and claims. Supplier bills go to the owner to approve for the stock sheet.</p>
-      <ScanForm />
+      <BillScanner />
       <ClaimForm today={todayISO()} />
       {data?.length ? (
         <table className="tbl" style={{ maxWidth: 640 }}>

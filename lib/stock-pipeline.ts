@@ -11,6 +11,8 @@ import {
 import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
 import { categories, categoryKeyboard } from './expenses'
 import { alertIfAiDown } from './notify'
+import { billToDrive, dropFromDrive } from './invoice-drive'
+import { cleanBillPhoto } from './clean-image'
 
 // Supplier bill to stock sheet, from Telegram or the app's Scan page. Nothing reaches
 // the sheet until an owner taps Approve.
@@ -19,7 +21,7 @@ type Sender = { chatId: number; approvalChat: number; name: string; fromId: unkn
 // A Telegram bill carries its fileId and message; a Scan bill its file in the vault bucket.
 // `expense` is the Management Report category for the bill's Others lines, once picked.
 // `dupOf` is the look-alike bill the owner is asked about; `dupOk` once they say it's a real second bill.
-type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any; expense?: string; dupOf?: string; dupOk?: boolean }
+type Draft = { bill: Bill; fileId?: string; storagePath?: string; scanDocId?: number; mime: string; sender: Sender; msg?: any; expense?: string; dupOf?: string; dupOk?: boolean; driveId?: string; driveLink?: string }
 
 const OTHERS = 'OTHERS'
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -43,9 +45,19 @@ export async function runStockPipeline(msg: any, sender: Sender): Promise<boolea
   const file = pickFile(msg)
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
   if (!file || !apiKey) return false
-  const base64 = await fileBase64(file.fileId)
-  if (!base64) return false
-  const bill = await readBill(base64, file.mime, apiKey).catch(async e => {
+  const raw = await fileBase64(file.fileId)
+  if (!raw) return false
+  // Cleaned to a black-and-white scan first (as the app does on the phone); that copy is
+  // what's read, kept and saved to Drive.
+  const cleaned = await cleanBillPhoto(Buffer.from(raw, 'base64'), file.mime)
+  const base64 = cleaned.bytes.toString('base64')
+  let storagePath: string | undefined
+  if (cleaned.mime !== file.mime || cleaned.bytes.length !== Buffer.byteLength(raw, 'base64')) {
+    const path = `scans/tg-${randomUUID()}`
+    const { error } = await supabase.storage.from('vault').upload(path, cleaned.bytes, { contentType: cleaned.mime })
+    if (!error) storagePath = path
+  }
+  const bill = await readBill(base64, cleaned.mime, apiKey).catch(async e => {
     console.error('[CFO] bill read failed:', e)
     await alertIfAiDown(e)
     return null
@@ -55,7 +67,7 @@ export async function runStockPipeline(msg: any, sender: Sender): Promise<boolea
     await sendMessage(sender.chatId, `📄 That's a statement of account from ${esc(bill.supplier)}, not a bill, so I recorded nothing.`)
     return true
   }
-  await advance({ bill, fileId: file.fileId, mime: file.mime, sender, msg: { message_id: msg.message_id, chat: msg.chat, from: msg.from, photo: msg.photo, document: msg.document } })
+  await advance({ bill, fileId: file.fileId, storagePath, mime: storagePath ? cleaned.mime : file.mime, sender, msg: { message_id: msg.message_id, chat: msg.chat, from: msg.from, photo: msg.photo, document: msg.document } })
   return true
 }
 
@@ -104,6 +116,7 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   const twin = await sameInvoice(bill, ctx, draftId)
   if (twin) {
     if (draftId) await closeDraft(draftId)
+    await dropFromDrive(draft.driveId)
     await sendMessage(sender.chatId, `📁 Same invoice no. ${esc(bill.invoice)} as a bill already ${twin}. I didn't add it twice.`)
     return `Duplicate: invoice ${bill.invoice} was already ${twin}. Nothing was added twice.`
   }
@@ -114,6 +127,20 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     if (draftId) await closeDraft(draftId)
     await sendMessage(sender.chatId, `📷 I read ${esc(bill.supplier)} ${esc(bill.invoice || '')} but not its ${bill.lines.length ? 'total' : 'items'}. Nothing was recorded. Please send a clearer photo of the whole bill.`)
     return "Couldn't read the items or total. Please take the photo again, showing the whole bill."
+  }
+
+  // Into Drive as soon as it's read (STOCK COUNT › Suppliers Invoices <year> › supplier › month).
+  if (!draft.driveId) {
+    const base64 = await draftBase64(draft)
+    const saved = base64 ? await billToDrive({
+      base64, mime: draft.mime, date: bill.date, supplier: matchSupplier(ctx, bill.supplier) ?? '', printed: bill.supplier,
+      invoice: bill.invoice, total: bill.total,
+    }) : null
+    if (saved) {
+      draft.driveId = saved.fileId
+      draft.driveLink = saved.link
+      if (draftId) await supabase.from('agent_actions').update({ payload: draft }).eq('id', draftId).eq('status', 'proposed')
+    }
   }
 
   // A bill with the same date, amount and items (any shop name, since handwriting is read
@@ -169,6 +196,7 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   // A real second bill the owner confirmed gets its own key, so the sheet doesn't refuse it.
   const key = draft.dupOk ? `${billKey(supplier, bill)}-2nd-${randomUUID().slice(0, 6)}` : billKey(supplier, bill)
   if (!draft.dupOk && (ctx.log.some(l => l.key === key) || (await isPending(key)))) {
+    await dropFromDrive(draft.driveId)
     await sendMessage(sender.chatId, `📁 Already done: ${esc(supplier)} ${esc(bill.invoice)}. I didn't add it twice.`)
     return 'This bill was already sent in. Nothing was added twice.'
   }
@@ -183,7 +211,7 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     payload: {
       key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
       fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
-      sheetPrices, expense: draft.expense,
+      sheetPrices, expense: draft.expense, driveId: draft.driveId, driveLink: draft.driveLink,
     },
     chatId: sender.approvalChat,
     text,
@@ -569,6 +597,7 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
   if (verb === 'smd') {
     if (a === 'd') {
       await closeDraft(id)
+      await dropFromDrive(draft.driveId)
       await sendMessage(draft.sender.approvalChat, `🗑 Skipped as a duplicate: ${esc(draft.bill.supplier || 'bill')} ${rm(draft.bill.total ?? 0)} on ${draft.bill.date ? shown(draft.bill.date) : 'no date'}. Nothing was recorded twice.`)
       return { toast: 'Skipped as a duplicate.' }
     }
@@ -587,6 +616,7 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
     }
     if (a === 'c') {
       await closeDraft(id)
+      await dropFromDrive(draft.driveId)
       await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
       return { toast: 'Cancelled.' }
     }
@@ -601,6 +631,7 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
     if (!line) return { toast: 'Unknown line.' }
     if (b === 'c') {
       await closeDraft(id)
+      await dropFromDrive(draft.driveId)
       await sendMessage(draft.sender.approvalChat, '🛑 Cancelled. Nothing was recorded.')
       return { toast: 'Cancelled.' }
     }
@@ -618,6 +649,9 @@ export async function answerStockQuestion(data: string): Promise<{ toast: string
   return { toast: 'Saved. I will remember this.' }
 }
 
+// The bill's file: the cleaned copy in storage when there is one, else the Telegram file.
+const draftBase64 = (d: Draft) => (d.storagePath ? scanBase64(d.storagePath) : d.fileId ? fileBase64(d.fileId) : Promise.resolve(null))
+
 async function scanBase64(path: string): Promise<string | null> {
   const { data, error } = await supabase.storage.from('vault').download(path)
   if (error || !data) return null
@@ -625,10 +659,11 @@ async function scanBase64(path: string): Promise<string | null> {
 }
 
 export async function recordReceipt(p: any) {
-  const base64 = p.fileId ? await fileBase64(p.fileId) : p.storagePath ? await scanBase64(p.storagePath) : null
+  // Saved to Drive on upload: the sheet just links to it. Older bills still send the photo.
+  const base64 = p.driveLink ? null : p.storagePath ? await scanBase64(p.storagePath) : p.fileId ? await fileBase64(p.fileId) : null
   const res = await writeReceipt({
     key: p.key, date: p.date, supplier: p.supplier, printed: p.printed, invoice: p.invoice, total: p.total, lines: p.lines, sentBy: p.sentBy,
-    photo: base64 ? { base64, mime: p.mime } : null,
+    photo: base64 ? { base64, mime: p.mime } : null, link: p.driveLink || undefined,
   })
   if (res.duplicate) return { kind: 'stock_duplicate', supplier: p.supplier, invoice: p.invoice }
 

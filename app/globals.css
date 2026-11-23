@@ -385,3 +385,17 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .scan-item.bad { border-color: var(--rust); }
 .scan-pdf { display: grid; place-items: center; height: 110px; font-weight: 700; color: var(--ink-soft); }
 .scan-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(33,28,22,.7); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
+.scan-count { position: absolute; left: 8px; top: 8px; background: rgba(33,28,22,.75); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 10px; }
+.scan-add { width: 100%; margin-top: 4px; padding: 4px 6px !important; font-size: 12px !important; }
+
+/* ---- Scan: the crop screen ---- */
+.crop-screen { position: fixed; inset: 0; z-index: 1000; background: #1d1a16; display: flex; flex-direction: column; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+.crop-hint { color: #f3ede4; text-align: center; font-size: 14px; margin: 4px 0 10px; }
+.crop-wrap { flex: 1; min-height: 0; display: grid; place-items: center; }
+.crop-stage { position: relative; touch-action: none; }
+.crop-stage canvas { display: block; }
+.crop-lines { position: absolute; inset: 0; pointer-events: none; }
+.crop-lines polygon { fill: rgba(217,119,87,.15); stroke: var(--clay); stroke-width: 2; }
+.crop-dot { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(255,255,255,.9); border: 3px solid var(--clay); touch-action: none; cursor: grab; }
+.crop-bar { display: flex; gap: 8px; justify-content: space-between; margin-top: 12px; }
+.crop-bar .btn { flex: 1; }

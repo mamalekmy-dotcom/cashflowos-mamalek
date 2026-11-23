@@ -104,7 +104,13 @@ export async function claim(
     return null
   }
   if (!data || data.length === 0) return null   // already handled / expired / lost the race
-  return data[0] as ActionRow
+  const row = data[0] as ActionRow
+  // A rejected bill comes back out of the Drive folders it was saved to on upload.
+  if (to === 'rejected' && row.agent_key === 'stock-receipt' && (row.payload as any)?.driveId) {
+    const { dropFromDrive } = await import('./invoice-drive')
+    await dropFromDrive((row.payload as any).driveId)
+  }
+  return row
 }
 
 // ------------------------------------------------------------

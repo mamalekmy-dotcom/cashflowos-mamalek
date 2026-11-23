@@ -29,7 +29,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents)
     const secret = PropertiesService.getScriptProperties().getProperty('BOT_SECRET')
     if (!secret || req.secret !== secret) return out({ ok: false, error: 'forbidden' })
-    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport }[req.action]
+    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport, saveInvoice, trashInvoice }[req.action]
     if (!run) return out({ ok: false, error: 'unknown action' })
     const lock = LockService.getScriptLock()
     lock.waitLock(25000)
@@ -239,12 +239,26 @@ function addTo(range, amount) {
   range.setValue(Math.round((base + amount) * 1000) / 1000)
 }
 
-// The owner's "Suppliers Invoices" folder: one folder per supplier, then year, then
-// month as "11 NOV".
-const INVOICES_FOLDER_ID = '1ejOvbXgotMGAhI5xN5I5MGSYY0TryPYN'
+// Bills are kept under STOCK COUNT in one folder a year, "Suppliers Invoices 2026",
+// then one folder per supplier, then month as "11 NOV". A new year's folder is made
+// the first time a bill from that year arrives. The 2026 folder was "Suppliers
+// Invoices" (supplier > year > month) until migrateInvoiceFolders() reshaped it.
+const STOCK_COUNT_FOLDER_ID = '1ZXHsKifom1cc1nmFhE8k_PEF9EvZeBT2'
+const INVOICES_FOLDER_ID = '1ejOvbXgotMGAhI5xN5I5MGSYY0TryPYN' // "Suppliers Invoices 2026"
 const MONTH_FOLDERS = ['01 JAN', '02 FEB', '03 MAR', '04 APR', '05 MAY', '06 JUN', '07 JUL', '08 AUG', '09 SEP', '10 OCT', '11 NOV', '12 DEC']
 const FOLDER_NOISE = ['SDN', 'BHD', 'THE', 'AND', 'TRADING', 'MARKETING', 'ENTERPRISE', 'FROZEN', 'FOOD', 'FRESH', 'CASH', 'CARRY', 'MOHD', 'BIN']
 const folderWords = s => clean(s).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length > 2 && FOLDER_NOISE.indexOf(w) < 0)
+const yearFolderName = year => `Suppliers Invoices ${year}`
+
+function subFolder(folder, name) {
+  const hit = folder.getFoldersByName(name)
+  return hit.hasNext() ? hit.next() : folder.createFolder(name)
+}
+
+function yearRoot(year) {
+  if (String(year) === '2026') return DriveApp.getFolderById(INVOICES_FOLDER_ID)
+  return subFolder(DriveApp.getFolderById(STOCK_COUNT_FOLDER_ID), yearFolderName(year))
+}
 
 // The owner names supplier folders their own way ("ATLAS (ICE)", "ZEST FROZEN FOOD
 // SDN BHD"), so match on the main word of the sheet column, then of the name printed
@@ -252,7 +266,10 @@ const folderWords = s => clean(s).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').spl
 function supplierFolder(root, names) {
   const folders = []
   const it = root.getFolders()
-  while (it.hasNext()) folders.push(it.next())
+  while (it.hasNext()) {
+    const f = it.next()
+    if (f.getName() !== '_Rejected') folders.push(f)
+  }
   const squash = s => clean(s).toUpperCase().replace(/[^A-Z0-9]+/g, '')
   for (const name of names) {
     const want = folderWords(name)
@@ -271,24 +288,81 @@ function supplierFolder(root, names) {
   return root.createFolder(clean(label).replace(/[\\/:*?"<>|]/g, ' '))
 }
 
-function savePhoto(photo, date, supplier, invoice, printed) {
-  const sub = (folder, name) => {
-    const hit = folder.getFoldersByName(name)
-    return hit.hasNext() ? hit.next() : folder.createFolder(name)
-  }
-  const safe = supplier.replace(/[\\/:*?"<>|]/g, ' ').trim()
+const fileSafe = s => String(s || '').replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
+
+// "2026-11-03 LUCKY FROZEN SG26-151219 RM11562.pdf" in Suppliers Invoices 2026 > LUCKY FROZEN > 11 NOV.
+function savePhoto(photo, date, supplier, invoice, printed, total) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : Utilities.formatDate(new Date(), 'Asia/Kuala_Lumpur', 'yyyy-MM-dd')
   // OTHERS is a Purchase column, not a supplier, so the printed name decides the folder.
-  const names = supplier === 'OTHERS' ? [printed, supplier] : [supplier, printed]
-  const root = DriveApp.getFolderById(INVOICES_FOLDER_ID)
-  const folder = sub(sub(supplierFolder(root, names.filter(Boolean)), date.slice(0, 4)), MONTH_FOLDERS[Number(date.slice(5, 7)) - 1])
+  const names = (supplier === 'OTHERS' ? [printed, supplier] : [supplier, printed]).filter(Boolean)
+  const folder = subFolder(supplierFolder(yearRoot(day.slice(0, 4)), names.length ? names : ['OTHERS']), MONTH_FOLDERS[Number(day.slice(5, 7)) - 1])
   const ext = photo.mime === 'application/pdf' ? 'pdf' : photo.mime === 'image/png' ? 'png' : 'jpg'
-  const name = `${date} ${safe}${invoice ? ' ' + invoice.replace(/[\\/:*?"<>|]/g, '-') : ''}.${ext}`
+  const who = fileSafe(supplier === 'OTHERS' && printed ? printed : supplier || printed || 'Unknown')
+  const amount = Number(total) > 0 ? ` RM${Math.round(Number(total) * 100) / 100}` : ''
+  const name = `${day} ${who}${invoice ? ' ' + fileSafe(invoice) : ''}${amount}.${ext}`
   const blob = Utilities.newBlob(Utilities.base64Decode(photo.base64), photo.mime, name)
-  return folder.createFile(blob).getUrl()
+  const file = folder.createFile(blob)
+  return { link: file.getUrl(), fileId: file.getId() }
+}
+
+// Saved as soon as a bill is uploaded and read, before anyone approves it.
+function saveInvoice(req) {
+  if (!req.photo || !req.photo.base64) throw new Error('No file')
+  return savePhoto(req.photo, req.date, req.supplier || '', req.invoice || '', req.printed || '', req.total)
+}
+
+// A rejected, cancelled or duplicate bill comes out of the folders (Drive trash keeps it
+// 30 days). Only files inside a "Suppliers Invoices" folder can be trashed this way.
+function trashInvoice(req) {
+  const file = DriveApp.getFileById(req.fileId)
+  let parent = file.getParents().hasNext() ? file.getParents().next() : null
+  for (let i = 0; parent && i < 4; i++) {
+    if (/^Suppliers Invoices/.test(parent.getName())) {
+      file.setTrashed(true)
+      return { trashed: true }
+    }
+    parent = parent.getParents().hasNext() ? parent.getParents().next() : null
+  }
+  throw new Error('That file is not in a Suppliers Invoices folder')
+}
+
+// One-off, run from the editor: rename "Suppliers Invoices" to "Suppliers Invoices 2026"
+// and move each supplier's 2026 > month folders up to supplier > month. Any other
+// year moves to its own "Suppliers Invoices <year>" folder.
+function migrateInvoiceFolders() {
+  const root = DriveApp.getFolderById(INVOICES_FOLDER_ID)
+  root.setName(yearFolderName(2026))
+  const moveInto = (from, to) => {
+    const files = from.getFiles()
+    while (files.hasNext()) files.next().moveTo(to)
+    const subs = from.getFolders()
+    while (subs.hasNext()) {
+      const sub = subs.next()
+      moveInto(sub, subFolder(to, sub.getName()))
+      sub.setTrashed(true)
+    }
+  }
+  const moved = []
+  const suppliers = root.getFolders()
+  while (suppliers.hasNext()) {
+    const sup = suppliers.next()
+    const years = sup.getFolders()
+    while (years.hasNext()) {
+      const y = years.next()
+      if (!/^\d{4}$/.test(y.getName())) continue
+      const target = y.getName() === '2026' ? sup : supplierFolder(yearRoot(y.getName()), [sup.getName()])
+      moveInto(y, target)
+      y.setTrashed(true)
+      moved.push(`${sup.getName()} ${y.getName()}`)
+    }
+  }
+  Logger.log('Moved: ' + moved.join(', '))
 }
 
 function writeReceipt(req) {
   const { key, date, supplier, invoice, total, lines, photo, sentBy, logOnly, printed } = req
+  // A bill saved to Drive on upload brings its link; older ones still bring the photo.
+  const savedLink = req.link || ''
   const logSheet = tab(LOG_TAB, LOG_HEADERS)
   if (logSheet.getLastRow() > 1) {
     const keys = logSheet.getRange(2, LOG_HEADERS.length, logSheet.getLastRow() - 1, 1).getValues()
@@ -330,7 +404,7 @@ function writeReceipt(req) {
     addTo(purchaseCell, Number(total))
   }
 
-  const link = photo ? savePhoto(photo, date, supplier, invoice, printed) : ''
+  const link = savedLink || (photo ? savePhoto(photo, date, supplier, invoice, printed, total).link : '')
   const now = new Date()
   const rows = (lines.length ? lines : [{}]).map(l => [
     now, date, supplier, invoice || '', l.item === NOT_STOCK ? '' : l.item || '', l.text || '',

@@ -578,3 +578,15 @@ where not exists (select 1 from subscriptions);
 -- Staff sign-up (/join/<token>): the login ID staff pick for themselves.
 -- ------------------------------------------------------------
 alter table app_users add column if not exists username text unique;
+
+-- ------------------------------------------------------------
+-- seen_files: the exact same file sent twice is stopped before it's read.
+-- key: 'app:<sha256 of the original photos>' or 'tg:<Telegram file_unique_id>'.
+-- ------------------------------------------------------------
+create table if not exists seen_files (
+  key        text        primary key,
+  label      text,
+  sent_by    text,
+  created_at timestamptz not null default now()
+);
+alter table seen_files enable row level security;

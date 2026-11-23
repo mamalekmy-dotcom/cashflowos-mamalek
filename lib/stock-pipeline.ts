@@ -116,10 +116,11 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return "Couldn't read the items or total. Please take the photo again, showing the whole bill."
   }
 
-  // No usable invoice number: a bill with the same date, amount and items (any shop name,
-  // since handwriting is read differently) may be the same bill sent twice, or a real
-  // second delivery. Ask, never decide alone.
-  if (!draft.dupOk && !hasInvoiceNo(bill)) {
+  // A bill with the same date, amount and items (any shop name, since handwriting is read
+  // differently) may be the same bill sent twice, or a real second delivery. With an
+  // invoice no., only when the other bill's number is missing or one character off
+  // (SG25-151219 read for SG26-151219). Ask, never decide alone.
+  if (!draft.dupOk) {
     const twin = await lookalike(bill, ctx, draftId)
     if (twin) {
       draft.dupOf = twin
@@ -225,6 +226,20 @@ async function sameInvoice(bill: Bill, ctx: Context, selfId?: number): Promise<s
 const hasInvoiceNo = (bill: Bill) => { const no = invoiceNo(bill.invoice); return no.length >= 4 && /\d/.test(no) }
 const cents = (n: unknown) => Math.round((Number(n) || 0) * 100)
 const amounts = (lines: { amount?: number | null }[] = []) => lines.map(l => cents(l.amount)).sort((a, b) => a - b).join(',')
+// Two invoice numbers one misread character apart (one changed, added or dropped).
+function oneOff(a: string, b: string): boolean {
+  if (a === b) return true
+  if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 4) return false
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  return a.slice(i + 1) === b.slice(i + 1) || a.slice(i) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i)
+}
+// Could these be the same paper? Either has no number, or the numbers are one misread apart.
+const numbersFit = (other: string | null | undefined, bill: Bill) => {
+  const mine = invoiceNo(bill.invoice)
+  const theirs = invoiceNo(other)
+  return !hasInvoiceNo(bill) || theirs.length < 4 || oneOff(mine, theirs)
+}
 const sameBill = (a: { date?: string | null; total?: number | null; lines?: any[] }, b: Bill) =>
   !!a.date && a.date === b.date && Math.abs(cents(a.total) - cents(b.total)) <= 1 &&
   (!(a.lines?.length && b.lines.length) || amounts(a.lines) === amounts(b.lines))
@@ -244,12 +259,12 @@ async function lookalike(bill: Bill, ctx: Context, selfId?: number): Promise<str
     if (row.result?.removed || row.result?.kind === 'stock_duplicate') continue
     const p = row.payload ?? {}
     if (row.agent_key === 'stock-draft') {
-      if (row.status !== 'proposed' || !p.bill || !sameBill(p.bill, bill)) continue
-      return `${esc(p.bill.supplier || 'a bill')} · ${rm(p.bill.total ?? 0)}, sent by ${esc(p.sender?.name || 'someone')} at ${when(row.proposed_at)}, still waiting for an answer`
+      if (row.status !== 'proposed' || !p.bill || !sameBill(p.bill, bill) || !numbersFit(p.bill.invoice, bill)) continue
+      return `${esc(p.bill.supplier || 'a bill')} · ${rm(p.bill.total ?? 0)}${p.bill.invoice ? ` · Inv ${esc(p.bill.invoice)}` : ''}, sent by ${esc(p.sender?.name || 'someone')} at ${when(row.proposed_at)}, still waiting for an answer`
     }
-    if (!sameBill(p, bill)) continue
+    if (!sameBill(p, bill) || !numbersFit(p.invoice, bill)) continue
     const state = row.status === 'proposed' ? 'waiting for Approve' : 'already recorded'
-    return `${esc(p.printed || p.supplier || 'a bill')} · ${rm(p.total ?? 0)}, sent by ${esc(p.sentBy || 'someone')} at ${when(row.proposed_at)}, ${state}`
+    return `${esc(p.printed || p.supplier || 'a bill')} · ${rm(p.total ?? 0)}${p.invoice ? ` · Inv ${esc(p.invoice)}` : ''}, sent by ${esc(p.sentBy || 'someone')} at ${when(row.proposed_at)}, ${state}`
   }
   // Keyed in the sheet's log before (same shop, date and total).
   const supplier = matchSupplier(ctx, bill.supplier)
@@ -260,7 +275,7 @@ async function lookalike(bill: Bill, ctx: Context, selfId?: number): Promise<str
 async function askDuplicate(id: number, draft: Draft, twin: string): Promise<void> {
   await sendWithButtons(
     draft.sender.approvalChat,
-    `${aboutBill(draft)}\n\n👯 This bill has no invoice no., and looks the same as another bill on ${shown(draft.bill.date!)}: same amount and items.\n` +
+    `${aboutBill(draft)}\n\n👯 ${hasInvoiceNo(draft.bill) ? 'Its invoice no. is one character off another bill' : 'This bill has no invoice no., and looks the same as another bill'} on ${shown(draft.bill.date!)}: same amount and items.\n` +
       `Other bill: ${twin}.\n\nIs it the same bill sent twice?`,
     rows([
       { text: '🗑 Duplicate, skip it', callback_data: `smd:${id}:d` },

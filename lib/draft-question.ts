@@ -31,7 +31,7 @@ export async function draftQuestions(drafts: { id: number; payload: any }[]): Pr
     const id = d.id
     if (d.payload.dupOf && !d.payload.dupOk) {
       out.set(id, {
-        id, kind: 'duplicate', ask: `No invoice no., and it looks the same as another bill: ${String(d.payload.dupOf).replace(/<[^>]+>/g, '')}. Same bill sent twice?`,
+        id, kind: 'duplicate', ask: `Looks the same as another bill (same date, amount and items): ${String(d.payload.dupOf).replace(/<[^>]+>/g, '')}. Same bill sent twice?`,
         choices: [{ value: `smd:${id}:d`, label: 'Duplicate, skip it' }, { value: `smd:${id}:r`, label: 'Real 2nd bill, record it' }],
       })
       continue

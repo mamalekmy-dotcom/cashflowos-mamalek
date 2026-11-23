@@ -15,14 +15,9 @@ export const DEFAULT_COUNT_RULES: CountRules = { skipWeekdays: [], skipHolidays:
 export const POSITIONS = [
   { label: 'Outlet Manager', department: 'Management' },
   { label: 'FOH Supervisor', department: 'FOH' },
-  { label: 'Cashier', department: 'FOH' },
-  { label: 'Bar Crew', department: 'FOH' },
   { label: 'FOH Crew', department: 'FOH' },
-  { label: 'Head Chef', department: 'BOH' },
   { label: 'BOH Supervisor', department: 'BOH' },
-  { label: 'Cook', department: 'BOH' },
-  { label: 'Kitchen Crew', department: 'BOH' },
-  { label: 'Dishwasher', department: 'BOH' },
+  { label: 'BOH Crew', department: 'BOH' },
 ]
 
 // The next ID after the highest one in use, so a removed ID is never handed out again.

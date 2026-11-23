@@ -14,7 +14,7 @@ export default function SignupLink({ path, enabled }: { path: string; enabled: b
     <div className="admin-card" style={{ maxWidth: 640 }}>
       <p className="rowlabel" style={{ marginBottom: 4 }}>Staff sign-up link {enabled ? null : <span className="pill overdue">off</span>}</p>
       <p className="cap" style={{ marginTop: 0 }}>
-        Send this to new staff on WhatsApp or Lark. They pick their own login ID and password, no approval needed.
+        Send this to new staff on WhatsApp or Lark. They sign up with their own email and password, no approval needed.
         You get a Telegram message for each sign-up; then key in their HR number below and tick &quot;Can send bills&quot; in Admin if needed.
       </p>
       <code style={{ display: 'block', wordBreak: 'break-all', margin: '6px 0 10px' }}>{url}</code>

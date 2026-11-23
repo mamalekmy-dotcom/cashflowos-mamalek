@@ -91,7 +91,7 @@ export async function costsUpTo(day: string, today: string) {
   const [{ data: sales }, { data: stock }, { data: keyed }, { data: tms }, { data: counted }, rateFor] = await Promise.all([
     supabase.from('daily_sales').select('sale_date, net_sales').gte('sale_date', `${month}-01`).lte('sale_date', monthEnd),
     supabase.from('stock_counts').select('section, item, opening_amount, bought_amount, closing_amount').eq('month', month),
-    supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
+    supabase.from('monthly_costs').select('labour, rent').eq('month', month).gt('labour', 0).maybeSingle(),
     supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
     supabase.from('stock_closed').select('month').eq('month', month).maybeSingle(),
     foodRates(),

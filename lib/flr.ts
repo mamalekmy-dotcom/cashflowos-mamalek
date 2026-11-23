@@ -49,7 +49,7 @@ export async function flrFor(month: string, today: string) {
     supabase.from('agent_actions').select('payload').eq('agent_key', 'stock-receipt').eq('status', 'executed')
       .gte('payload->>date', from).lte('payload->>date', to),
     supabase.from('stock_counts').select('section, item, opening_amount, bought_amount, closing_amount').eq('month', month),
-    supabase.from('monthly_costs').select('labour, rent').eq('month', month).maybeSingle(),
+    supabase.from('monthly_costs').select('labour, rent').eq('month', month).gt('labour', 0).maybeSingle(),
     supabase.from('monthly_pnl').select('net_sales, labor, rent').eq('month', month).maybeSingle(),
     supabase.from('stock_items').select('name, section'),
     supabase.from('stock_closed').select('month').eq('month', month).maybeSingle(),

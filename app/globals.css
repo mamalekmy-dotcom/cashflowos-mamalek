@@ -375,3 +375,13 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .daypick .btn.on { background: var(--clay); color: #FFFDF9; border-color: var(--clay); }
 .daypick input[type="date"] { background: var(--card); border: 1px solid var(--line-2); border-radius: var(--r-13); padding: 5px 10px; font-size: 13px; color: var(--ink); font-family: inherit; }
 .tbl.sales3 td:not(:first-child), .tbl.sales3 th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- Scan: the tray of bills waiting to be sent ---- */
+.scan-tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+.scan-item { position: relative; border: 1px solid var(--line-2); border-radius: var(--r-8); background: var(--paper-2); padding: 4px; }
+.scan-item img { display: block; width: 100%; height: 110px; object-fit: cover; border-radius: 6px; background: #fff; }
+.scan-item .cap { margin: 4px 2px 0; font-size: 11px; line-height: 1.35; }
+.scan-item.done { border-color: var(--sage); }
+.scan-item.bad { border-color: var(--rust); }
+.scan-pdf { display: grid; place-items: center; height: 110px; font-weight: 700; color: var(--ink-soft); }
+.scan-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(33,28,22,.7); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }

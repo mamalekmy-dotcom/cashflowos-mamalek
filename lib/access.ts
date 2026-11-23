@@ -24,7 +24,8 @@ const ROLE_ACCESS: Record<Exclude<Role, 'owner'>, Record<string, Level>> = {
   },
   sales: { '/crm': 'edit', '/tasks': 'edit' },
   ops: { '/suppliers': 'edit', '/stock': 'edit', '/vault': 'edit', '/tasks': 'edit' },
-  staff: { '/tasks': 'edit' },
+  // Staff only clock in and out. Anything more is ticked for them one by one in Admin.
+  staff: {},
 }
 
 // Tabs an admin can tick for one person on top of their role. Admin is left out
@@ -42,6 +43,9 @@ export const GRANTABLE_TABS = [
   { href: '/vault', label: 'Vault' },
   { href: '/suppliers', label: 'Suppliers' },
   { href: '/stock', label: 'Stock' },
+  { href: '/scan', label: 'Scan invoices' },
+  { href: '/chat', label: 'Chat' },
+  { href: '/hr', label: 'HR (leave)' },
   // Module tabs still being built. They sit last so nobody lands on a page that
   // doesn't exist yet. Move each one up when its tab is merged.
   { href: '/marketing', label: 'Marketing' },
@@ -53,13 +57,17 @@ export const GRANTABLE_TABS = [
 // what there.
 const EVERYONE = ['/account', '/scan', '/clock', '/chat', '/tasks', '/hr']
 
+// What every Staff login gets without any ticks.
+const STAFF_BASE = ['/account', '/clock']
+
 // The first part of a path, so /hr/leave follows the rule for /hr.
 const tabOf = (path: string) => '/' + (path.split('/')[1] ?? '')
 
 export function accessLevel(user: AccessUser, path: string): Level | null {
   if (user.role === 'owner') return 'edit'
   const tab = tabOf(path)
-  if (EVERYONE.includes(tab)) return 'edit'
+  // Staff get only their account and clock in by default; other roles get the EVERYONE pages.
+  if ((user.role === 'staff' ? STAFF_BASE : EVERYONE).includes(tab)) return 'edit'
   if (user.extra_tabs.includes(tab)) return 'edit'
   return ROLE_ACCESS[user.role as keyof typeof ROLE_ACCESS]?.[tab] ?? null
 }

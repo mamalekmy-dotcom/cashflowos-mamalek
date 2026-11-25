@@ -89,6 +89,7 @@ export async function topSuppliers(day: string, limit = 6): Promise<SupplierSpen
     return m
   }
   const a = sum(now as any), b = sum(before as any)
-  return [...a.entries()].map(([supplier, v]) => ({ supplier, now: v, before: b.get(supplier) ?? 0 }))
+  // OTHERS is the sheet's mixed column (cleaning, repairs…), not one supplier.
+  return [...a.entries()].filter(([supplier]) => supplier !== 'OTHERS').map(([supplier, v]) => ({ supplier, now: v, before: b.get(supplier) ?? 0 }))
     .sort((x, y) => y.now - x.now).slice(0, limit)
 }

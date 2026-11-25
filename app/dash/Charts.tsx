@@ -8,13 +8,20 @@ const iw = W - PAD.l - PAD.r
 const ih = H - PAD.t - PAD.b
 
 const kfmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)))
+// A round axis top and step: 50% in 10s, 360k in 100k steps, etc.
+function niceAxis(maxValue: number, ticks = 4) {
+  const raw = Math.max(maxValue, 1) / ticks
+  const mag = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) ?? 10 * mag
+  return { max: step * Math.ceil(maxValue / step), step }
+}
 const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-function Grid({ max, ticks, fmt }: { max: number; ticks: number; fmt: (n: number) => string }) {
+function Grid({ max, step, fmt }: { max: number; step: number; fmt: (n: number) => string }) {
   return (
     <>
-      {Array.from({ length: ticks + 1 }, (_, i) => {
-        const v = (max / ticks) * i
+      {Array.from({ length: Math.round(max / step) + 1 }, (_, i) => {
+        const v = step * i
         const y = PAD.t + ih - (v / max) * ih
         return (
           <g key={i}>
@@ -29,7 +36,7 @@ function Grid({ max, ticks, fmt }: { max: number; ticks: number; fmt: (n: number
 
 export function FoodCostLine({ points, target }: { points: { label: string; value: number | null; estimate: boolean }[]; target: number }) {
   const vals = points.map(p => p.value ?? 0)
-  const max = Math.max(40, Math.ceil((Math.max(...vals, target) + 5) / 10) * 10)
+  const { max, step: tick } = niceAxis(Math.max(40, ...vals, target + 5), 5)
   const step = points.length > 1 ? iw / (points.length - 1) : 0
   const xy = (i: number, v: number) => [PAD.l + i * step, PAD.t + ih - (v / max) * ih] as const
   const real = points.map((p, i) => (p.value != null ? xy(i, p.value) : null))
@@ -37,7 +44,7 @@ export function FoodCostLine({ points, target }: { points: { label: string; valu
   const ty = PAD.t + ih - (target / max) * ih
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="chart" role="img" aria-label="Food cost percent by month">
-      <Grid max={max} ticks={4} fmt={n => `${Math.round(n)}%`} />
+      <Grid max={max} step={tick} fmt={n => `${Math.round(n)}%`} />
       <line x1={PAD.l} x2={W - PAD.r} y1={ty} y2={ty} className="ch-target" />
       <text x={W - PAD.r} y={ty - 5} className="ch-axis" textAnchor="end">target {target}%</text>
       <path d={path} className="ch-line" />
@@ -56,13 +63,13 @@ export function FoodCostLine({ points, target }: { points: { label: string; valu
 }
 
 export function SalesCogsBars({ items }: { items: { label: string; sales: number; cogs: number; estimate: boolean }[] }) {
-  const max = Math.max(1, ...items.map(i => i.sales)) * 1.1
+  const { max, step } = niceAxis(Math.max(1, ...items.map(i => i.sales)), 4)
   const slot = iw / Math.max(1, items.length)
   const bw = Math.min(26, slot / 3)
   const y = (v: number) => PAD.t + ih - (v / max) * ih
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="chart" role="img" aria-label="Nett sales and cost of goods by month">
-      <Grid max={max} ticks={3} fmt={kfmt} />
+      <Grid max={max} step={step} fmt={kfmt} />
       {items.map((it, i) => {
         const cx = PAD.l + slot * i + slot / 2
         return (
@@ -82,7 +89,7 @@ export function SalesCogsBars({ items }: { items: { label: string; sales: number
 }
 
 export function DailyBars({ items, today }: { items: { date: string; nett: number }[]; today: string }) {
-  const max = Math.max(1, ...items.map(i => i.nett)) * 1.1
+  const { max, step } = niceAxis(Math.max(1, ...items.map(i => i.nett)), 4)
   const avg = items.length ? items.reduce((s, i) => s + i.nett, 0) / items.length : 0
   const slot = iw / Math.max(1, items.length)
   const bw = Math.max(4, Math.min(18, slot * 0.6))
@@ -90,7 +97,7 @@ export function DailyBars({ items, today }: { items: { date: string; nett: numbe
   const ay = y(avg)
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="chart" role="img" aria-label="Nett sales by day this month">
-      <Grid max={max} ticks={3} fmt={kfmt} />
+      <Grid max={max} step={step} fmt={kfmt} />
       <line x1={PAD.l} x2={W - PAD.r} y1={ay} y2={ay} className="ch-target" />
       <text x={W - PAD.r} y={ay - 5} className="ch-axis" textAnchor="end">avg {kfmt(avg)}</text>
       {items.map((it, i) => {

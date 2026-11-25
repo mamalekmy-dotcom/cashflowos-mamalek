@@ -466,3 +466,5 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
   .home-top, .chart-grid { grid-template-columns: 1fr; }
   .hero-num { font-size: 60px; }
 }
+.grid.ops { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.grid.ops .stat .v { font-size: 22px; white-space: nowrap; }

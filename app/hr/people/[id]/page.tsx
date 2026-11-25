@@ -8,6 +8,7 @@ import { leaveFor } from '@/lib/hr/data'
 import { canSeeRestricted, isHR } from '@/lib/hr/rules'
 import { todayISO } from '@/lib/records'
 import { supabase } from '@/lib/supabase'
+import DeleteStaff from '../DeleteStaff'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,6 +77,7 @@ export default async function Person({ params }: { params: Promise<{ id: string 
       <LeaveSummary {...leave} canCancel={r => r.status === 'approved' && mayDecideLeave(ctx, id)} />
       {hr ? <LeaveForm types={types} personId={id} today={today} /> : null}
       {hr ? <LedgerForm personId={id} types={types} year={year} /> : null}
+      {ctx.viewer.appRole === 'owner' ? <DeleteStaff id={id} name={str(person.preferred_name) || str(person.full_name)} hasLogin={Boolean(person.user_id)} /> : null}
     </>
   )
 }

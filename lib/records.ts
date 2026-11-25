@@ -46,7 +46,7 @@ export const m = (r: Rec, k: string) => {
 }
 
 // Format a number as Malaysian Ringgit for display.
-export const rm = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY')
+export const rm = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // The business runs on Malaysia time, so "today" must not lag 8 hours behind UTC.
 const TIME_ZONE = 'Asia/Kuala_Lumpur'

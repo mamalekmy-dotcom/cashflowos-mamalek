@@ -590,3 +590,13 @@ create table if not exists seen_files (
   created_at timestamptz not null default now()
 );
 alter table seen_files enable row level security;
+
+-- ------------------------------------------------------------
+-- Leave types (25 Nov 2026). MC is 2 days a month, no carry-over (checked in lib/leaves.ts).
+-- ------------------------------------------------------------
+insert into hr_leave_types (code, name, allow_half_day, allow_negative, active, notes) values
+ ('AL', 'Annual leave', true, false, true, '8 days a year (part-time pro-rated)'),
+ ('MC', 'Medical leave (MC)', false, false, true, '2 days a month, no carry-over'),
+ ('UPL', 'Unpaid leave', true, true, true, null),
+ ('CL', 'Compensation leave', true, true, true, null)
+on conflict (code) do nothing;

@@ -44,7 +44,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <aside className="side">
             <div className="brand"><img className="logo" src="/icons/logo.png" alt="" /> Mama Lek</div>
             <Nav pendingCount={pending} user={access} />
-            <p className="hint">One <code>records</code> table behind every tab. Your robots live in <code>agents/</code>.</p>
           </aside>
           <main className="main"><ConnStatus />{children}</main>
         </div>

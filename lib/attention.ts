@@ -61,11 +61,11 @@ export async function attentionItems(today: string, food: MonthFood[]): Promise<
   }
   await safe(async () => {
     const y = dayAdd(today, -1)
-    const { data } = await supabase.from('punches').select('user_id, kind, punched_at, app_users(name)')
+    const { data } = await supabase.from('punches').select('user_id, kind, punched_at, app_users!punches_user_id_fkey(name)')
       .gte('punched_at', `${y}T00:00:00+08:00`).lt('punched_at', `${today}T00:00:00+08:00`).order('punched_at')
     const last = new Map<number, { kind: string; name: string }>()
     for (const p of data ?? []) last.set(p.user_id, { kind: p.kind, name: (p.app_users as any)?.name ?? `#${p.user_id}` })
-    const open = [...last.values()].filter(v => v.kind === 'in').map(v => v.name)
+    const open = [...last.values()].filter(v => v.kind !== 'out').map(v => v.name)
     if (open.length) out.push({ icon: '⏰', group: 'People', href: '/team/history', text: `**${plural(open.length, 'staff')} didn't clock out** yesterday: ${open.join(', ')}.` })
   })
   await safe(async () => {

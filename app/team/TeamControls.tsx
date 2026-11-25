@@ -35,12 +35,16 @@ export function ShiftForm() {
   const [code, setCode] = useState('')
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('18:00')
+  const [brk, setBrk] = useState('60')
+  const [split, setSplit] = useState(false)
+  const [start2, setStart2] = useState('17:00')
+  const [end2, setEnd2] = useState('22:00')
   const [message, setMessage] = useState('')
   const [pending, run] = useTransition()
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    run(async () => setMessage((await saveShiftType(code, start, end)).message))
+    run(async () => setMessage((await saveShiftType(code, start, end, Number(brk || 0), split ? start2 : '', split ? end2 : '')).message))
   }
 
   return (
@@ -49,6 +53,21 @@ export function ShiftForm() {
       <input className="login-input" placeholder="Code, e.g. F1" value={code} onChange={e => setCode(e.target.value)} />
       <input className="login-input" type="time" aria-label="Start" value={start} onChange={e => setStart(e.target.value)} style={{ marginTop: 10 }} />
       <input className="login-input" type="time" aria-label="End" value={end} onChange={e => setEnd(e.target.value)} style={{ marginTop: 10 }} />
+      <label className="admin-tab" style={{ marginTop: 10 }}>
+        <input type="checkbox" checked={split} onChange={() => setSplit(s => !s)} /> Split shift (lunch and dinner blocks)
+      </label>
+      {split ? (
+        <>
+          <p className="cap" style={{ margin: '8px 0 0' }}>Second block. The break is the gap between the two blocks.</p>
+          <input className="login-input" type="time" aria-label="Second block start" value={start2} onChange={e => setStart2(e.target.value)} style={{ marginTop: 6 }} />
+          <input className="login-input" type="time" aria-label="Second block end" value={end2} onChange={e => setEnd2(e.target.value)} style={{ marginTop: 10 }} />
+        </>
+      ) : (
+        <label className="cap" style={{ display: 'block', marginTop: 10 }}>Break (minutes, 0 for none)
+          <input className="login-input" inputMode="numeric" value={brk} onChange={e => setBrk(e.target.value.replace(/\D/g, ''))} />
+        </label>
+      )}
+      <p className="cap" style={{ margin: '8px 0 0' }}>Staff clock out for the break and back in with photos. Back more than 10 minutes late, you get a Telegram notice.</p>
       {message ? <p className="cap" style={{ margin: '10px 0 0' }}>{message}</p> : null}
       <button className="btn" type="submit" disabled={pending || !code} style={{ marginTop: 12 }}>Save shift</button>
     </form>

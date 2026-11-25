@@ -600,3 +600,45 @@ insert into hr_leave_types (code, name, allow_half_day, allow_negative, active, 
  ('UPL', 'Unpaid leave', true, true, true, null),
  ('CL', 'Compensation leave', true, true, true, null)
 on conflict (code) do nothing;
+-- ------------------------------------------------------------
+-- Clock-in v2 (26 Nov 2026): breaks, shop photo, accuracy, devices, flags,
+-- shift breaks / split shifts, manual attendance marks.
+-- ------------------------------------------------------------
+alter table punches drop constraint if exists punches_kind_check;
+alter table punches add constraint punches_kind_check check (kind in ('in', 'out', 'break_out', 'break_in'));
+alter table punches add column if not exists shop_photo_path text;
+alter table punches add column if not exists accuracy_m integer;
+alter table punches add column if not exists device_id text;
+alter table punches add column if not exists flags text[] not null default '{}';
+alter table punches add column if not exists added_by bigint references app_users(id) on delete set null;
+
+alter table shift_types add column if not exists break_minutes integer not null default 0;
+alter table shift_types add column if not exists start2 time;
+alter table shift_types add column if not exists end2 time;
+
+-- One phone per staff: the first is approved; another waits for an owner.
+create table if not exists staff_devices (
+  id          bigint generated always as identity primary key,
+  user_id     bigint      not null references app_users(id) on delete cascade,
+  device_id   text        not null,
+  label       text,
+  status      text        not null default 'pending' check (status in ('approved', 'pending', 'rejected')),
+  decided_by  bigint      references app_users(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  decided_at  timestamptz,
+  unique (user_id, device_id)
+);
+alter table staff_devices enable row level security;
+
+-- Absent marks and notes by an owner for a day.
+create table if not exists attendance_marks (
+  id          bigint generated always as identity primary key,
+  user_id     bigint      not null references app_users(id) on delete cascade,
+  work_date   date        not null,
+  kind        text        not null check (kind in ('absent')),
+  note        text,
+  created_by  bigint      references app_users(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  unique (user_id, work_date, kind)
+);
+alter table attendance_marks enable row level security;

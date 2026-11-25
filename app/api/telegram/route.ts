@@ -24,6 +24,7 @@ import { stockConfigured, syncOpening } from '@/lib/stock-sheet'
 import { runStockPipeline, answerStockQuestion, answerStockCategory, answerTypedRow, typeRowPrompt, typedRowFor, useSheetPrices } from '@/lib/stock-pipeline'
 import { duplicateNote, rememberFile, seenBefore } from '@/lib/seen-files'
 import { billToDrive } from '@/lib/invoice-drive'
+import { decideDeviceAs } from '@/lib/devices'
 import { categories, categoryNamed, fileWithCategory, proposeExpense, typePrompt, typedFor } from '@/lib/expenses'
 
 // 🔒 Don't edit — this keeps your robot safe.
@@ -232,6 +233,17 @@ async function handleCallback(cb: any): Promise<Response> {
   if (typeRow) {
     await answerCallbackQuery(cbId)
     if (chatId) await sendMessage(chatId, typeRowPrompt(Number(typeRow[1]), Number(typeRow[2])))
+    return Response.json({ ok: true })
+  }
+
+  // A staff member's new phone: Approve / Reject (owners only, checked above).
+  const dev = data.match(/^dev:(\d+):([ar])$/)
+  if (dev) {
+    const owner = await userByTelegramId(fromId)
+    const r = await decideDeviceAs(Number(dev[1]), dev[2] === 'a', owner?.id ?? null)
+    await answerCallbackQuery(cbId, r.ok ? 'Saved.' : r.message)
+    if (chatId && messageId) await editMessageReplyMarkup(chatId, messageId)
+    if (chatId) await sendMessage(chatId, r.ok ? `📱 ${r.message}` : r.message)
     return Response.json({ ok: true })
   }
 

@@ -11,6 +11,9 @@ import { leaveBoard } from '@/lib/leaves'
 import DayPicker from './DayPicker'
 import { DailyBars, FoodCostLine, SalesCogsBars, SupplierBars } from './dash/Charts'
 import LeaveDecide from './dash/LeaveDecide'
+import { AbsentButton, AddPunchForm, DeviceButtons } from './dash/AttendanceControls'
+import { monthReport, todayBoard, type BoardRow } from '@/lib/attendance-board'
+import { FLAG_LABEL, hoursText, timeText } from '@/lib/clock'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +25,7 @@ const TABS = [
   { key: 'sales', label: 'Sales', icon: '💰' },
   { key: 'costs', label: 'Costs', icon: '🧮' },
   { key: 'ops', label: 'Daily Ops', icon: '📋' },
+  { key: 'attendance', label: 'Attendance', icon: '⏰' },
   { key: 'leaves', label: 'Leaves', icon: '🌴' },
 ] as const
 type Tab = (typeof TABS)[number]['key']
@@ -136,6 +140,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         : tab === 'sales' ? <SalesTab day={day} today={today} yesterday={yesterday} />
         : tab === 'costs' ? <CostsTab day={day} today={today} />
         : tab === 'ops' ? <OpsTab day={day} />
+        : tab === 'attendance' ? <AttendanceTab day={day} today={today} />
         : <LeavesTab today={today} />}
     </>
   )
@@ -341,6 +346,95 @@ async function LeavesTab({ today }: { today: string }) {
             </tbody>
           </table>
         ) : <p className="cap">No staff profiles yet.</p>}
+      </section>
+    </>
+  )
+}
+
+// ------------------------------------------------------------------ Attendance
+const STATUS: Record<BoardRow['status'], { text: string; cls: string }> = {
+  missing: { text: 'Missing', cls: 'zero' }, break: { text: 'On break', cls: 'low' }, in: { text: 'In', cls: 'ok' },
+  not_yet: { text: 'Not in yet', cls: '' }, out: { text: 'Done', cls: '' }, absent: { text: 'Absent', cls: 'zero' }, off: { text: 'Off', cls: '' },
+}
+const t5 = (t: string | null | undefined) => (t ? String(t).slice(0, 5) : '')
+
+async function AttendanceTab({ day, today }: { day: string; today: string }) {
+  const month = day.slice(0, 7)
+  const [board, report] = await Promise.all([todayBoard(day), monthReport(month)])
+  const working = board.rows.filter(r => r.status !== 'off')
+  const count = (st: BoardRow['status']) => board.rows.filter(r => r.status === st).length
+  return (
+    <>
+      {board.devices.length ? (
+        <section className="card attention">
+          <p className="card-title">📱 New phones waiting for approval</p>
+          <table className="tbl">
+            <tbody>
+              {board.devices.map(d => (
+                <tr key={d.id}>
+                  <td data-label="Staff"><strong>{d.name}</strong> <span className="cap">· {d.label}</span></td>
+                  <td data-label=""><DeviceButtons id={d.id} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      <section className="card">
+        <p className="card-title">{day === today ? 'Today' : shortDate(day)} · {count('in')} in · {count('break')} on break · {count('missing')} missing · {count('out')} done</p>
+        <p className="cap" style={{ marginTop: 0 }}>Late = more than 10 min after the shift starts. Late from break = break length + 10 min (you also get a Telegram notice).</p>
+        {working.length ? (
+          <table className="tbl att-tbl">
+            <thead><tr><th>Name</th><th>Shift</th><th>Status</th><th>Worked</th><th>Flags</th><th>Photos</th><th></th></tr></thead>
+            <tbody>
+              {working.map(r => (
+                <tr key={r.userId}>
+                  <td data-label="Name"><strong>{r.name}</strong></td>
+                  <td data-label="Shift">{r.shift ? `${r.shift.code} ${t5(r.shift.start_time)}–${t5(r.shift.end2 || r.shift.end_time)}` : <span className="cap">no shift</span>}</td>
+                  <td data-label="Status">
+                    <span className={`lv ${r.overBreak ? 'zero' : STATUS[r.status].cls}`}>{r.overBreak ? 'Break over' : STATUS[r.status].text}</span>
+                    {r.since && (r.status === 'in' || r.status === 'break' || r.status === 'out') ? <span className="cap"> since {timeText(r.since)}</span> : null}
+                  </td>
+                  <td data-label="Worked">{r.worked ? hoursText(r.worked) : '–'}</td>
+                  <td data-label="Flags">{r.flags.map(f => <span key={f} className="pill overdue" style={{ marginRight: 4 }}>{FLAG_LABEL[f] ?? f}</span>)}</td>
+                  <td data-label="Photos">
+                    {r.selfie ? <a href={r.selfie} target="_blank" rel="noreferrer"><img className="att-photo" src={r.selfie} alt="Selfie" /></a> : null}
+                    {r.shop ? <a href={r.shop} target="_blank" rel="noreferrer"><img className="att-photo" src={r.shop} alt="Shop" /></a> : null}
+                  </td>
+                  <td data-label="">{r.status === 'missing' || r.status === 'absent' ? <AbsentButton userId={r.userId} day={day} absent={r.status === 'absent'} /> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="cap">Nobody is rostered or has punched on this day. Set shifts on Team Roster.</p>}
+        <div style={{ marginTop: 12 }}><AddPunchForm staff={board.staff} day={day} /></div>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <p className="card-title">Punch report · {monthOf(day)}</p>
+          <a className="btn" href={`/api/attendance-report?month=${month}`}>⬇ Download Excel</a>
+        </div>
+        <p className="cap" style={{ marginTop: 0 }}>For payroll: hours worked (breaks taken out) and flags per person. Pick another month with the date picker.</p>
+        <table className="tbl">
+          <thead><tr><th>Name</th><th>Days</th><th>Hours</th><th>Late</th><th>Late break</th><th>No GPS</th><th>No shift</th><th>Missing out</th><th>Absent</th></tr></thead>
+          <tbody>
+            {report.rows.map(r => (
+              <tr key={r.userId}>
+                <td data-label="Name"><strong>{r.name}</strong></td>
+                <td data-label="Days">{r.days}</td>
+                <td data-label="Hours">{hoursText(r.minutes)}</td>
+                <td data-label="Late">{r.late || '–'}</td>
+                <td data-label="Late break">{r.lateBreak || '–'}</td>
+                <td data-label="No GPS">{r.noGps || '–'}</td>
+                <td data-label="No shift">{r.offRoster || '–'}</td>
+                <td data-label="Missing out">{r.missingOut || '–'}</td>
+                <td data-label="Absent">{r.absent || '–'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
     </>
   )

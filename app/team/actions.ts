@@ -31,12 +31,21 @@ export async function decideOvertime(id: number, approve: boolean): Promise<Resu
   return { ok: true, message: approve ? 'Approved.' : 'Denied.' }
 }
 
-export async function saveShiftType(code: string, start: string, end: string): Promise<Result> {
+// A shift: one block with an optional break (e.g. 60 min), or a split shift with a
+// second block (lunch and dinner); then the break is the gap between the blocks.
+export async function saveShiftType(code: string, start: string, end: string, breakMinutes = 0, start2 = '', end2 = ''): Promise<Result> {
   await requireOwner()
   const clean = code.trim().toUpperCase()
   if (!clean) return { ok: false, message: 'Give the shift a short code.' }
   if (!isTime(start) || !isTime(end)) return { ok: false, message: 'Set the start and end time.' }
-  const { error } = await supabase.from('shift_types').upsert({ code: clean, start_time: start, end_time: end })
+  const split = Boolean(start2 || end2)
+  if (split && (!isTime(start2) || !isTime(end2))) return { ok: false, message: 'Set both times of the second block, or leave both empty.' }
+  if (split && start2 <= end) return { ok: false, message: 'The second block must start after the first one ends.' }
+  if (!Number.isFinite(breakMinutes) || breakMinutes < 0 || breakMinutes > 600) return { ok: false, message: 'Break is in minutes, 0 to 600.' }
+  const { error } = await supabase.from('shift_types').upsert({
+    code: clean, start_time: start, end_time: end, break_minutes: split ? 0 : Math.round(breakMinutes),
+    start2: split ? start2 : null, end2: split ? end2 : null,
+  })
   if (error) return { ok: false, message: error.message }
   revalidatePath('/team')
   return { ok: true, message: 'Shift saved.' }

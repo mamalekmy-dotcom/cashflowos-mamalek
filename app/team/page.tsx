@@ -129,7 +129,7 @@ async function Report({ people, month }: { people: Person[]; month: string }) {
 }
 
 async function Shifts() {
-  const { data } = await supabase.from('shift_types').select('code, start_time, end_time').order('code')
+  const { data } = await supabase.from('shift_types').select('code, start_time, end_time, break_minutes, start2, end2').order('code')
   return (
     <>
       <ShiftForm />
@@ -138,7 +138,8 @@ async function Shifts() {
           {(data ?? []).map(s => (
             <tr key={s.code}>
               <td data-label="Shift">{s.code}</td>
-              <td data-label="Hours">{String(s.start_time).slice(0, 5)}–{String(s.end_time).slice(0, 5)}</td>
+              <td data-label="Hours">{String(s.start_time).slice(0, 5)}–{String(s.end_time).slice(0, 5)}{s.start2 ? `, ${String(s.start2).slice(0, 5)}–${String(s.end2).slice(0, 5)}` : ''}</td>
+              <td data-label="Break">{s.start2 ? 'split shift' : s.break_minutes ? `${s.break_minutes} min break` : 'no break'}</td>
             </tr>
           ))}
         </tbody>

@@ -30,6 +30,8 @@ async function readAll<T>(page: (a: number, b: number) => PromiseLike<{ data: un
   }
 }
 
+const nextMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) }
+
 export async function supplierBook(month: string) {
   const [{ data: last }, bills, { data: contacts }, buys] = await Promise.all([
     supabase.from('stock_counts').select('month').order('month', { ascending: false }).limit(1).maybeSingle(),
@@ -37,7 +39,7 @@ export async function supplierBook(month: string) {
       .eq('agent_key', 'stock-receipt').eq('status', 'executed').order('id').range(a, b)),
     supabase.from('suppliers').select('id, name, phone').order('name'),
     readAll<{ supplier: string; amount: number }>((a, b) => supabase.from('purchases').select('supplier, amount')
-      .gte('purchase_date', `${month}-01`).lte('purchase_date', `${month}-31`).order('id').range(a, b)),
+      .gte('purchase_date', `${month}-01`).lt('purchase_date', nextMonth(month)).order('id').range(a, b)),
   ])
   const sheet = last?.month
     ? await readAll<{ section: string; item: string; uom: string | null; unit_price: number | null }>((a, b) => supabase.from('stock_counts')

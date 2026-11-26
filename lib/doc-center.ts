@@ -72,7 +72,7 @@ export async function cabinet(month: string): Promise<CabinetFile[]> {
   for (const b of billRows) {
     const p = b.payload ?? {}
     files.push({
-      id: `b${b.id}`, folder: 'supplier', title: [p.supplier || p.printed || 'Supplier bill', p.invoice].filter(Boolean).join(' '),
+      id: `b${b.id}`, folder: 'supplier', title: [(p.supplier === 'OTHERS' ? p.printed : p.supplier) || p.printed || p.supplier || 'Supplier bill', p.invoice].filter(Boolean).join(' '),
       date: String(p.date), amount: typeof p.total === 'number' ? p.total : p.total ? Number(p.total) : null, by: p.sentBy ?? '',
       status: 'approved', url: !p.driveLink && p.storagePath ? urls.get(String(p.storagePath)) ?? null : null,
       isImage: String(p.mime || '').startsWith('image/'), drive: p.driveLink ?? null,

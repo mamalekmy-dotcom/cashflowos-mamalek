@@ -41,12 +41,13 @@ export async function proxy(req: NextRequest) {
 //   • /join/*                 — staff sign-up, only with the owners' current link (lib/signup.ts)
 //   • /api/telegram           — Telegram's webhook (has its own secret-header guard)
 //   • /api/cron-daily         — the daily cron (has its own fail-closed Bearer guard)
+//   • /api/cron-evening       — 8pm usual-order reminder (same fail-closed Bearer guard)
 //   • /manifest.webmanifest   — the REAL PWA manifest (app/manifest.ts serves HERE);
 //     /manifest.json          — belt-and-braces extra so install never silently breaks
 //   • /icons/*, /favicon.ico, /_next/* — static assets the install/render needs
 // A single missed exclusion here = a locked webhook on class day, so this list is tested.
 export const config = {
   matcher: [
-    '/((?!login|join/|r/|forgot-password|reset-password|api/login|api/logout|api/password|api/telegram|api/cron-daily|manifest\\.webmanifest|manifest\\.json|icons|_next|favicon\\.ico).*)',
+    '/((?!login|join/|r/|forgot-password|reset-password|api/login|api/logout|api/password|api/telegram|api/cron-daily|api/cron-evening|manifest\\.webmanifest|manifest\\.json|icons|_next|favicon\\.ico).*)',
   ],
 }

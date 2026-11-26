@@ -6,7 +6,8 @@ type Product = {
   item: string; section: string; unit: string; price: number | null; prev: number | null; date: string | null
   supplier: string | null; times: number; fromSheet: boolean
 }
-type Supplier = { name: string; phone: string | null; bills: number; amount: number; products: Product[] }
+type Supplier = { name: string; phone: string | null; bills: number; amount: number; products: Product[]; usual: { item: string; qty: number; unit: string }[]; days: number[] }
+const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const rm = (n: number) => 'RM ' + n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const wa = (phone: string) => { const d = phone.replace(/\D/g, ''); return d.startsWith('0') ? `6${d}` : d }
@@ -39,8 +40,9 @@ function Contact({ s }: { s: Supplier }) {
 
 function OrderSheet({ s, all, today, onClose }: { s: Supplier; all: Product[]; today: string; onClose: () => void }) {
   // Their items first; any other food item can be added from the search box.
-  const [qty, setQty] = useState<Record<string, string>>({})
-  const [extra, setExtra] = useState<Product[]>([])
+  // Your usual order, learned from their last bills, is filled in; change anything.
+  const [qty, setQty] = useState<Record<string, string>>(() => Object.fromEntries(s.usual.map(u => [u.item, String(u.qty)])))
+  const [extra, setExtra] = useState<Product[]>(() => all.filter(p => s.usual.some(u => u.item === p.item) && !s.products.includes(p)))
   const [find, setFind] = useState('')
   const days = useMemo(() => deliveryDays(today), [today])
   const [day, setDay] = useState(days[1].iso)
@@ -57,7 +59,7 @@ function OrderSheet({ s, all, today, onClose }: { s: Supplier; all: Product[]; t
     <div className="punch-sheet" role="dialog" aria-label={`Order from ${s.name}`} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="punch-sheet-body">
         <div className="card-head"><p className="card-title">Order · {s.name}</p><button type="button" className="btn ghost" onClick={onClose}>Close</button></div>
-        <p className="cap" style={{ marginTop: 0 }}>Tick items, set quantity. The message is written for you; you press send in WhatsApp.</p>
+        <p className="cap" style={{ marginTop: 0 }}>{s.usual.length ? 'Your usual order is filled in, from their last bills. Change any quantity; ' : 'Set quantities; '}the message is written for you and you press send in WhatsApp.</p>
         {list.length ? list.map(p => (
           <div className="sb-line" key={p.item}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -107,7 +109,7 @@ export default function SupplierBook({ suppliers, products, today, monthLabel }:
             <div style={{ flex: 1, minWidth: 0 }}>
               <p className="doc-title">{s.name}</p>
               <p className="cap" style={{ margin: 0 }}>
-                {s.bills ? `${s.bills} bill${s.bills > 1 ? 's' : ''} · ${rm(s.amount)} in ${monthLabel} · ` : ''}{s.phone ?? 'No contact on file'} <Contact s={s} />
+                {s.bills ? `${s.bills} bill${s.bills > 1 ? 's' : ''} · ${rm(s.amount)} in ${monthLabel} · ` : ''}{s.days.length ? `Usually ${s.days.map(d => DAY[d]).join(', ')} · ` : ''}{s.phone ?? 'No contact on file'} <Contact s={s} />
               </p>
             </div>
           </div>

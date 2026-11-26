@@ -1,6 +1,7 @@
 import 'server-only'
 import { supabase } from './supabase'
 import { NOT_STOCK } from './stock-logic'
+import { pastBills, usualOrders } from './habits'
 
 // The Suppliers page, laid out like Escor's: a Suppliers tab (contact, this month's bills,
 // Order / Call / WhatsApp) and a Products tab (every food ingredient with its last
@@ -14,7 +15,7 @@ export type Product = {
   item: string; section: string; unit: string; price: number | null; prev: number | null; date: string | null
   supplier: string | null; times: number; fromSheet: boolean
 }
-export type SupplierCard = { name: string; phone: string | null; bills: number; amount: number; products: Product[] }
+export type SupplierCard = { name: string; phone: string | null; bills: number; amount: number; products: Product[]; usual: { item: string; qty: number; unit: string }[]; days: number[] }
 
 type Line = { item?: string; qty?: number | null; unit?: string; price?: number | null }
 const PAGE = 1000
@@ -81,13 +82,16 @@ export async function supplierBook(month: string) {
   const cards = new Map<string, SupplierCard>()
   const card = (name: string) => {
     const k = key(name)
-    if (!cards.has(k)) cards.set(k, { name: name.trim(), phone: null, bills: 0, amount: 0, products: [] })
+    if (!cards.has(k)) cards.set(k, { name: name.trim(), phone: null, bills: 0, amount: 0, products: [], usual: [], days: [] })
     return cards.get(k)!
   }
   for (const c of contacts ?? []) card(c.name).phone = c.phone
   for (const b of buys) { const c = card(b.supplier); c.bills++; c.amount += Number(b.amount) || 0 }
   for (const p of products) if (p.supplier) card(p.supplier).products.push(p)
   for (const b of live) card(String(b.payload.supplier))
+  // What they usually deliver, and on which weekdays (lib/habits.ts).
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' })
+  for (const u of usualOrders(await pastBills(), today)) { const c = card(u.supplier); c.usual = u.items; c.days = u.days }
   const suppliers = [...cards.values()].filter(c => c.name && c.name !== 'OTHERS')
     .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name))
 

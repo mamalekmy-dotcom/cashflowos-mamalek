@@ -12,6 +12,7 @@ import { sheetContext, addAlias, setPrice, writeReceipt, removeReceipt, stockCon
 import { categories, categoryKeyboard } from './expenses'
 import { alertIfAiDown } from './notify'
 import { billToDrive, dropFromDrive } from './invoice-drive'
+import { fixInvoice, normalTop, pastBills, usualItemFor } from './habits'
 import { cleanBillPhoto } from './clean-image'
 
 // Supplier bill to stock sheet, from Telegram or the app's Scan page. Nothing reaches
@@ -111,6 +112,15 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
     return "Couldn't read the bill. Please take the photo again, showing the whole bill."
   }
 
+  // What past bills taught us: put a one-character misread of this supplier's usual
+  // invoice prefix right (SG25-151219 → SG26-151219) before checking for duplicates.
+  const history = await pastBills().catch(e => { console.error('[CFO] bill history failed:', e); return [] })
+  const knownSupplier = matchSupplier(ctx, bill.supplier)
+  if (knownSupplier && bill.invoice) {
+    const fixed = fixInvoice(history, knownSupplier, bill.invoice)
+    if (fixed) { console.log(`[CFO] invoice ${bill.invoice} read as ${fixed} (${knownSupplier}'s usual prefix)`); bill.invoice = fixed }
+  }
+
   // Same invoice number as a bill already recorded, waiting for Approve, or waiting on a
   // question: it's the same bill sent twice, even if the supplier name was read differently.
   const twin = await sameInvoice(bill, ctx, draftId)
@@ -171,7 +181,8 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   // gas bill that only says "14kg" reads 1 TONG. Packs (1000 PCS a carton) and rows by
   // weight or volume keep the bill's unit.
   const lines = bill.lines.map(l => {
-    const item = matchItem(ctx, l.text) ?? ''
+    // A line the sheet doesn't know by name: what this supplier always sells, when one clearly fits.
+    const item = matchItem(ctx, l.text) ?? usualItemFor(history, supplier, l.text) ?? ''
     const row = ctx.items.find(i => i.name === item)
     const uom = String(row?.uom ?? '').toUpperCase()
     const whole = row && Number(row.volume) === 1 && uom && !/^(G|GM|KG|ML|L)$/.test(uom)
@@ -214,7 +225,13 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   // A clean bill goes straight in, like Escor: known supplier, every item matched (both
   // checked above), not a duplicate (above), adds up, and no price more than 5% up. It is
   // listed in the next 9am brief with an Undo button. Anything else still asks the owner.
-  const bigJump = spikes.filter(s => s.percent > AUTO_PRICE_JUMP_PCT)
+  // A price inside the item's own normal range (its top price over 90 days, +5%) is normal,
+  // even when it's above last month's: vegetables swing. Items with little history use 5%.
+  const bigJump = spikes.filter(s => {
+    if (s.percent <= AUTO_PRICE_JUMP_PCT) return false
+    const top = normalTop(ctx.log, s.item, s.unit, bill.date)
+    return !(top && s.price <= top * (1 + AUTO_PRICE_JUMP_PCT / 100))
+  })
   if (!problems.length && !bigJump.length) {
     const done = await runAutopilot('stock-receipt', { ...payload, auto: true, idempotencyKey: `stock:${key}:auto` })
     if (done && done.result?.kind === 'stock_receipt') {

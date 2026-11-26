@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
-import { sendMessage } from '@/lib/telegram'
+import { sendMessage, sendWithButtons } from '@/lib/telegram'
+import { autoRecorded } from '@/lib/stock-pipeline'
 import { getRecords, getFunnel, isCashReceived, latestMonthSales, rm, todayISO, type Rec } from '@/lib/records'
 import { propose, proposeAndNotify, runAutopilot } from '@/lib/actions'
 import { SCHEDULED, type ProposalDraft } from '@/agents/registry'
@@ -120,6 +121,18 @@ export async function GET(req: Request) {
   const to = recipients()
   const sends = await Promise.allSettled(to.map((id) => sendMessage(id, message)))
   const sent = sends.filter((r) => r.status === 'fulfilled').length
+
+  // Bills recorded without an Approve in the last 24 hours, each with an Undo button.
+  const autoBills = await autoRecorded(new Date(Date.now() - 24 * 3_600_000).toISOString()).catch(() => [])
+  if (autoBills.length && process.env.OWNER_CHAT_ID?.trim()) {
+    const total = autoBills.reduce((t, b) => t + b.total, 0)
+    const list = autoBills.map(b => `• ${b.supplier} ${rm(b.total)}${b.invoice ? ` · ${b.invoice}` : ''} · ${b.items} item${b.items > 1 ? 's' : ''}${b.sentBy ? ` · by ${b.sentBy}` : ''}`).join('\n')
+    await sendWithButtons(
+      process.env.OWNER_CHAT_ID.trim(),
+      `🤖 <b>Recorded without approval (${autoBills.length})</b> · ${rm(total)}\nAll checks passed: supplier known, items matched, adds up, no price up more than 5%.\n${list.replace(/&/g, '&amp;').replace(/</g, '&lt;')}\n\nTap Undo only if one is wrong.`,
+      autoBills.slice(0, 30).map(b => [{ text: `↩️ Undo ${b.supplier.slice(0, 22)} ${rm(b.total)}`, callback_data: `sun:${b.id}` }]),
+    ).catch(e => console.error('[CFO] auto bills list failed:', e))
+  }
 
   // ③ SWEEP the scheduled agents — CREATE proposals only (they pass through ASK).
   const owner = process.env.OWNER_CHAT_ID?.trim()

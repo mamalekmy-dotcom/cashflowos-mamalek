@@ -247,6 +247,15 @@ async function handleCallback(cb: any): Promise<Response> {
     return Response.json({ ok: true })
   }
 
+  // Undo a bill that went in without an Approve (from the 9am brief). Owners only, checked above.
+  const undo = data.match(/^sun:(\d+)$/)
+  if (undo) {
+    const text = await import('@/lib/stock-pipeline').then(m => m.undoBill(Number(undo[1])))
+    await answerCallbackQuery(cbId, text.startsWith('↩️') ? 'Undone.' : text)
+    if (chatId) await sendMessage(chatId, text)
+    return Response.json({ ok: true })
+  }
+
   // An expense category tapped: on a bill to file (xc), or for a stock bill's Others
   // lines (sxc). The "t" forms ask for the category to be typed as a reply.
   const cat = data.match(/^(s?xc)(t?):(\d+)(?::(\d+))?$/)

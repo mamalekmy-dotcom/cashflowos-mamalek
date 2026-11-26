@@ -49,3 +49,5 @@ export const trashInvoice = (fileId: string) => call<{ trashed: boolean }>('tras
 // Doc Center files to Drive: STOCK COUNT › Doc Center <year> › folder › month (same Apps Script).
 export const saveDocFile = (body: { photo: { base64: string; mime: string }; date: string; folder: string; title: string; total: number | null }) =>
   call<{ fileId: string; link: string }>('saveDoc', body)
+// Undo a recorded bill: subtract it from the stock and Purchase tabs and drop its log rows.
+export const removeReceipt = (key: string) => call<{ removed: number }>('removeReceipt', { key })

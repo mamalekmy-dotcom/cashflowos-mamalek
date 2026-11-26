@@ -2,13 +2,13 @@ import 'server-only'
 import { randomUUID } from 'crypto'
 import { supabase } from './supabase'
 import { sendMessage, sendWithButtons, editMessageText, getFilePath, downloadFileBytes, type InlineKeyboard } from './telegram'
-import { propose, proposeAndNotify, approveRow, claim, markExecuted, type ActionRow } from './actions'
+import { propose, proposeAndNotify, approveRow, claim, markExecuted, runAutopilot, type ActionRow } from './actions'
 import { todayISO, rm } from './records'
 import {
   NOT_STOCK, normal, readBill, billProblems, matchSupplier, matchItem, candidates, guessNames, billKey, ymOf, spikesIn, perUnit,
   type Bill, type Context, type Spike,
 } from './stock-logic'
-import { sheetContext, addAlias, setPrice, writeReceipt, stockConfigured } from './stock-sheet'
+import { sheetContext, addAlias, setPrice, writeReceipt, removeReceipt, stockConfigured } from './stock-sheet'
 import { categories, categoryKeyboard } from './expenses'
 import { alertIfAiDown } from './notify'
 import { billToDrive, dropFromDrive } from './invoice-drive'
@@ -205,14 +205,34 @@ async function advance(draft: Draft, draftId?: number): Promise<string> {
   const problems = billProblems(bill, today)
   const text = card(supplier, bill, lines, spikes, problems, ctx, draft)
   const sheetPrices = offSheetPrice(lines, ctx)
+  const payload = {
+    key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
+    fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
+    sheetPrices, expense: draft.expense, driveId: draft.driveId, driveLink: draft.driveLink,
+  }
+
+  // A clean bill goes straight in, like Escor: known supplier, every item matched (both
+  // checked above), not a duplicate (above), adds up, and no price more than 5% up. It is
+  // listed in the next 9am brief with an Undo button. Anything else still asks the owner.
+  const bigJump = spikes.filter(s => s.percent > AUTO_PRICE_JUMP_PCT)
+  if (!problems.length && !bigJump.length) {
+    const done = await runAutopilot('stock-receipt', { ...payload, auto: true, idempotencyKey: `stock:${key}:auto` })
+    if (done && done.result?.kind === 'stock_receipt') {
+      await sendMessage(sender.chatId, `✅ Recorded: ${esc(supplier)} ${rm(bill.total ?? 0)}, ${lines.length} item${lines.length > 1 ? 's' : ''}. It's in tomorrow's 9am brief with Undo.`)
+      return `Recorded: ${supplier} ${rm(bill.total ?? 0)}. No approval needed.`
+    }
+    if (done?.result?.kind === 'stock_duplicate') {
+      await dropFromDrive(draft.driveId)
+      await sendMessage(sender.chatId, `📁 Already done: ${esc(supplier)} ${esc(bill.invoice)}. I didn't add it twice.`)
+      return 'This bill was already sent in. Nothing was added twice.'
+    }
+    // The sheet refused it (a missing day row or item): fall back to the owner.
+  }
+
   const row = await proposeAndNotify({
     agentKey: 'stock-receipt',
     idempotencyKey: `stock:${key}:${randomUUID()}`,
-    payload: {
-      key, text, date: bill.date, supplier, printed: bill.supplier, invoice: bill.invoice, total: bill.total, lines, spikes,
-      fileId: draft.fileId, storagePath: draft.storagePath, scanDocId: draft.scanDocId, mime: draft.mime, sentBy: sender.name,
-      sheetPrices, expense: draft.expense, driveId: draft.driveId, driveLink: draft.driveLink,
-    },
+    payload,
     chatId: sender.approvalChat,
     text,
     extraRows: id => sheetPriceRow(id, sheetPrices),
@@ -694,7 +714,10 @@ export async function recordReceipt(p: any) {
   }
 
   const owner = process.env.OWNER_CHAT_ID?.trim()
-  for (const s of (p.spikes ?? []) as Spike[]) {
+  if (p.auto) {
+    for (const s of (p.spikes ?? []) as Spike[]) await setPrice(ymOf(p.date), s.item, s.price).catch(e => console.error('[CFO] auto price update failed:', s.item, e))
+  }
+  for (const s of (p.auto ? [] : p.spikes ?? []) as Spike[]) {
     if (!owner) break
     const text =
       `🔺 <b>Price up: ${esc(s.item)}</b>\n` +
@@ -715,4 +738,38 @@ export async function recordReceipt(p: any) {
 export async function changePrice(p: any) {
   const res = await setPrice(p.ym, p.item, p.price)
   return { kind: 'stock_price', item: p.item, from: res.old, to: p.price, tab: res.tab }
+}
+
+// ---------------------------------------------------------------- auto-recorded bills
+export const AUTO_PRICE_JUMP_PCT = 5
+
+export type AutoBill = { id: number; supplier: string; total: number; invoice: string; date: string; items: number; sentBy: string }
+
+// Bills recorded without an Approve since `sinceIso`, still standing (not undone).
+export async function autoRecorded(sinceIso: string): Promise<AutoBill[]> {
+  const { data } = await supabase.from('agent_actions').select('id, payload, result')
+    .eq('agent_key', 'stock-receipt').eq('status', 'executed').eq('payload->>auto', 'true').gte('decided_at', sinceIso).order('id')
+  return (data ?? []).filter(r => r.result?.kind === 'stock_receipt' && !r.result?.removed).map(r => ({
+    id: r.id, supplier: String(r.payload.printed || r.payload.supplier || ''), total: Number(r.payload.total) || 0,
+    invoice: String(r.payload.invoice || ''), date: String(r.payload.date || ''), items: (r.payload.lines ?? []).length, sentBy: String(r.payload.sentBy || ''),
+  }))
+}
+
+// Undo: take a recorded bill back out of the stock sheet, the app's copies and Drive.
+export async function undoBill(id: number): Promise<string> {
+  const { data: row } = await supabase.from('agent_actions').select('id, payload, result, status').eq('id', id).eq('agent_key', 'stock-receipt').maybeSingle()
+  if (!row || row.status !== 'executed') return 'Not found.'
+  if (row.result?.removed) return 'Already undone.'
+  const p = row.payload ?? {}
+  const res = await removeReceipt(p.key)
+  const { data: buy } = await supabase.from('purchases').select('id').eq('purchase_date', p.date).eq('supplier', p.supplier).eq('amount', Number(p.total) || 0).limit(1)
+  if (buy?.[0]) await supabase.from('purchases').delete().eq('id', buy[0].id)
+  for (const l of (p.lines ?? []).filter((x: any) => x.item && x.item !== NOT_STOCK)) {
+    const { data: sd } = await supabase.from('stock_daily').select('id').eq('stock_date', p.date).eq('item', l.item).eq('qty', Number(l.qty) || 0).limit(1)
+    if (sd?.[0]) await supabase.from('stock_daily').delete().eq('id', sd[0].id)
+  }
+  await supabase.from('records').update({ status: 'reversed' }).eq('meta->>key', p.key).eq('meta->>source', 'stock-others')
+  await dropFromDrive(p.driveId)
+  await supabase.from('agent_actions').update({ result: { ...row.result, removed: true, removedAt: new Date().toISOString() } }).eq('id', id)
+  return `↩️ Undone: ${p.printed || p.supplier} ${rm(Number(p.total) || 0)}${res.removed ? '' : ' (it was not in the stock sheet)'}. Send the bill again if it needs recording.`
 }

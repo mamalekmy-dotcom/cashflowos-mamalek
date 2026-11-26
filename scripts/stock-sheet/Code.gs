@@ -29,7 +29,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents)
     const secret = PropertiesService.getScriptProperties().getProperty('BOT_SECRET')
     if (!secret || req.secret !== secret) return out({ ok: false, error: 'forbidden' })
-    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport, saveInvoice, trashInvoice, saveDoc }[req.action]
+    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport, saveInvoice, trashInvoice, saveDoc, removeReceipt }[req.action]
     if (!run) return out({ ok: false, error: 'unknown action' })
     const lock = LockService.getScriptLock()
     lock.waitLock(25000)
@@ -233,7 +233,7 @@ function syncOpening(req) {
 
 function addTo(range, amount) {
   const formula = range.getFormula()
-  if (formula) { range.setFormula(`${formula}+${amount}`); return }
+  if (formula) { range.setFormula(`${formula}${amount < 0 ? "" : "+"}${amount}`); return }
   const now = range.getValue()
   const base = typeof now === 'number' ? now : 0
   range.setValue(Math.round((base + amount) * 1000) / 1000)
@@ -432,6 +432,46 @@ function writeReceipt(req) {
   ])
   logSheet.getRange(logSheet.getLastRow() + 1, 1, rows.length, LOG_HEADERS.length).setValues(rows)
   return { duplicate: false, link, wrote: cells.length }
+}
+
+// Undo a recorded bill (the app's Undo button): take its quantities back off the stock
+// tab, its total off the Purchase tab, and delete its Receipt Log rows.
+function removeReceipt(req) {
+  const logSheet = tab(LOG_TAB, LOG_HEADERS)
+  const n = logSheet.getLastRow() - 1
+  if (n < 1 || !req.key) return { removed: 0 }
+  const vals = logSheet.getRange(2, 1, n, LOG_HEADERS.length).getValues()
+  const hits = []
+  vals.forEach((r, i) => { if (same(r[13], req.key)) hits.push({ r: r, row: i + 2 }) })
+  if (!hits.length) return { removed: 0 }
+  const first = hits[0].r
+  const date = first[1] instanceof Date ? isoDate(first[1]) : String(first[1]).slice(0, 10)
+  const ym = date.slice(0, 7)
+  const day = Number(date.slice(8, 10))
+  const t = tabsFor(ym)
+  const ss = book()
+  const stock = ss.getSheetByName(t.stock)
+  const purchase = ss.getSheetByName(t.purchase)
+  if (stock && purchase) {
+    const items = readItems(stock)
+    const header = stock.getRange(1, COL.day1, 1, COL.day31 - COL.day1 + 1).getValues()[0]
+    const dayAt = header.findIndex(v => Number(v) === day)
+    if (dayAt >= 0) {
+      hits.forEach(h => {
+        const item = h.r[4]
+        const qty = Number(h.r[6])
+        if (!item || !qty) return
+        const it = items.find(x => same(x.name, item))
+        if (it) addTo(stock.getRange(it.row, COL.day1 + dayAt), -qty)
+      })
+    }
+    const sup = readSuppliers(purchase).find(x => same(x.name, first[2]))
+    const dates = purchase.getRange(PURCHASE_FIRST_ROW, 1, PURCHASE_LAST_ROW - PURCHASE_FIRST_ROW + 1, 1).getValues()
+    const at = dates.findIndex(r => r[0] instanceof Date && isoDate(r[0]) === date)
+    if (sup && at >= 0 && Number(first[10])) addTo(purchase.getRange(PURCHASE_FIRST_ROW + at, sup.col), -Number(first[10]))
+  }
+  hits.map(h => h.row).sort((x, y) => y - x).forEach(row => logSheet.deleteRow(row))
+  return { removed: hits.length }
 }
 
 function setPrice(req) {

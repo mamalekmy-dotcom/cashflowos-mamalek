@@ -520,3 +520,25 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .doc-pages { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .doc-pages img, .doc-pdf { width: 44px; height: 54px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
 .doc-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+
+/* ---- Suppliers (Escor layout) ---- */
+.sb-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(0,0,0,.05); margin: 10px 0 14px; }
+.sb-tabs button { border: 0; background: transparent; padding: 10px; border-radius: 10px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.sb-tabs button.on { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.sb-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-bottom: 10px; overflow: hidden; }
+.sb-head { display: flex; gap: 12px; align-items: center; padding: 12px 14px; }
+.sb-ico { width: 38px; height: 38px; border-radius: 10px; background: rgba(182,128,42,.12); display: flex; align-items: center; justify-content: center; flex: none; }
+.sb-actions { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+.sb-actions > * { padding: 10px 4px; text-align: center; font-size: 13px; font-weight: 600; color: var(--ink); text-decoration: none; background: transparent; border: 0; border-left: 1px solid var(--line); cursor: pointer; }
+.sb-actions > *:first-child { border-left: 0; }
+.sb-actions .off { opacity: .35; cursor: default; }
+.sb-add { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 1px 8px; font-size: 12px; cursor: pointer; margin-left: 4px; }
+.sb-edit { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.sb-edit .login-input { width: 150px; }
+.sb-price { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sb-up { color: #b4462b; }
+.sb-down { color: #4b7a5a; }
+.sb-line { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.sb-qty { width: 72px !important; text-align: center; }
+.sb-total { display: flex; justify-content: space-between; margin: 14px 0 10px; font-size: 14px; }
+.btn.disabled { opacity: .45; pointer-events: none; }

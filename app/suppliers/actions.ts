@@ -34,3 +34,19 @@ export async function addProduct(supplierId: number, name: string, unit: string,
   revalidatePath('/suppliers')
   return { ok: true, message: 'Product added.' }
 }
+
+// Phone for a supplier card (owners or ticked staff key it in). Adds the supplier when new.
+export async function saveContact(name: string, phone: string): Promise<Result> {
+  if (!(await canEdit())) return { ok: false, message: 'Ask an owner to tick Suppliers for you.' }
+  const clean = name.trim()
+  if (!clean) return { ok: false, message: 'No supplier name.' }
+  const digits = phone.replace(/[^\d+ -]/g, '').trim()
+  if (digits.replace(/\D/g, '').length < 8) return { ok: false, message: 'Enter a phone number.' }
+  const { data: found } = await supabase.from('suppliers').select('id').ilike('name', clean).limit(1)
+  const { error } = found?.[0]
+    ? await supabase.from('suppliers').update({ phone: digits }).eq('id', found[0].id)
+    : await supabase.from('suppliers').insert({ name: clean, phone: digits })
+  if (error) return { ok: false, message: error.message }
+  revalidatePath('/suppliers')
+  return { ok: true, message: 'Saved.' }
+}

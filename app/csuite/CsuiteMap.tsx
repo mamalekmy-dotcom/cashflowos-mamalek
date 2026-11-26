@@ -36,7 +36,9 @@ const line = (a: Pt, b: Pt) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`
 
 type Step = { at: Spot; text: string; tone: 'clay' | 'sage' | 'dim'; hot?: Spot }
 
-export default function CsuiteMap({ findings, live, name = 'Jarvis Oyen' }: { findings: string[]; live: HeadKey[]; name?: string }) {
+export type Finding = { head: HeadKey; text: string }
+
+export default function CsuiteMap({ findings, live, name = 'Jarvis Oyen' }: { findings: Finding[]; live: HeadKey[]; name?: string }) {
   const [narrow, setNarrow] = useState(false)
   const [still, setStill] = useState(false)
   const [step, setStep] = useState(0)
@@ -54,17 +56,15 @@ export default function CsuiteMap({ findings, live, name = 'Jarvis Oyen' }: { fi
   const found = findings.length
   const steps: Step[] = [
     ...(found
-      ? findings.slice(0, 2).map((f): Step => ({ at: 'finance', text: f, tone: 'clay', hot: 'finance' }))
+      ? findings.slice(0, 4).map((f): Step => ({ at: f.head, text: f.text, tone: 'clay', hot: f.head }))
       : [{ at: 'finance', text: 'All lines OK today ✓', tone: 'sage', hot: 'finance' } as Step]),
-    { at: 'jarvis', text: found ? 'Boss, 1 thing needs your YES' : 'Nothing needs you today', tone: 'clay', hot: 'you' },
+    { at: 'jarvis', text: found ? `Boss, ${Math.min(found, 4)} thing${found > 1 ? 's' : ''} need your YES` : 'Nothing needs you today', tone: 'clay', hot: 'you' },
     ...(found
       ? [
           { at: 'you', text: '✅ Approve', tone: 'sage', hot: 'you' } as Step,
-          { at: 'jarvis', text: 'Task added · draft ready', tone: 'sage', hot: 'finance' } as Step,
+          { at: 'jarvis', text: 'Task added · draft ready', tone: 'sage', hot: findings[0].head } as Step,
         ]
       : []),
-    { at: 'ops', text: 'Standing by · needs data', tone: 'dim' },
-    { at: 'marketing', text: 'Coming next', tone: 'dim' },
   ]
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function CsuiteMap({ findings, live, name = 'Jarvis Oyen' }: { fi
   return (
     <div className="cs-stage">
       <svg viewBox={`0 0 ${L.w} ${L.h}`} className={`cs-svg${narrow ? ' narrow' : ''}`} role="img"
-        aria-label={`${name} links you to 4 AI heads. Live: ${live.join(', ')}. ${found ? `Finance found: ${findings.join('; ')}` : 'Finance: all lines OK.'}`}>
+        aria-label={`${name} links you to 4 AI heads. Live: ${live.join(', ')}. ${found ? `Found: ${findings.map(f => f.text).join('; ')}` : 'All lines OK.'}`}>
         {/* The links. */}
         <path d={line(P.you, P.jarvis)} className={`cs-link live${now.hot === 'you' ? ' hot' : ''}`} />
         {HEADS.map(h => (

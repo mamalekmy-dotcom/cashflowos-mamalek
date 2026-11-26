@@ -45,6 +45,24 @@ export const AGENTS: AgentMeta[] = [
     emoji: '💰',
     autonomyNote: '🟡 Daily 9am: watches sales, supplier spend, labour, food cost and buying. One recommendation a day; Approve adds a task + a draft. You send it.',
   },
+  {
+    key: 'ops-head',
+    label: 'Head of Ops',
+    emoji: '⚙️',
+    autonomyNote: '🟡 Daily 9am: late / no-GPS / missing clock-outs, bills waiting, leave unanswered, food cost. One recommendation a day; Approve adds a task + a draft.',
+  },
+  {
+    key: 'sales-head',
+    label: 'Head of Sales',
+    emoji: '🎯',
+    autonomyNote: '🟡 Daily 9am: week vs last week, spend per customer, month pace, slow weekday. One recommendation a day; Approve adds a task + a draft.',
+  },
+  {
+    key: 'marketing-head',
+    label: 'Head of Marketing',
+    emoji: '📣',
+    autonomyNote: '🟡 Daily 9am: marketing spend vs sales, customers a day, discounts, reviews. One recommendation a day; Approve adds a task + a draft.',
+  },
   // ---- Gallery placeholders (fill from agents/gallery/*.md; all DRAFT-only) ----
   {
     key: 'overdue-invoice',
@@ -277,7 +295,7 @@ async function taskAndDraft(agentKey: string, payload: any): Promise<any> {
     category: 'task',
     title: payload?.task?.title,
     due_date: payload?.task?.due_date,
-    note: `From the Head of Finance: ${payload?.note || ''}`.trim(),
+    note: `From the Head of ${payload?.head || 'Finance'}: ${payload?.note || ''}`.trim(),
     meta: { source: agentKey, alarm: payload?.alarm },
   })
   return {
@@ -306,6 +324,9 @@ export const EXECUTORS: Record<string, Executor> = {
   'stock-price': (p) => import('@/lib/stock-pipeline').then(m => m.changePrice(p)),
   // AI C-Suite heads — a task + a draft, never a send.
   'finance-head': (p) => taskAndDraft('finance-head', p),
+  'ops-head': (p) => taskAndDraft('ops-head', p),
+  'sales-head': (p) => taskAndDraft('sales-head', p),
+  'marketing-head': (p) => taskAndDraft('marketing-head', p),
   // The gallery agents — all DRAFT-only (a human sends).
   'overdue-invoice': (p) => draftOnly('overdue-invoice', p),
   'cold-lead': (p) => draftOnly('cold-lead', p),
@@ -387,4 +408,9 @@ const financeHeadCheck: ScheduledCheck = {
   check: (_rows, today) => import('@/lib/finance-head').then(m => m.financeCheck(today)),
 }
 
-export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck, financeHeadCheck]
+// The other three heads share lib/heads.ts. Same rule: ONE proposal a day each.
+const opsHeadCheck: ScheduledCheck = { key: 'ops-head', label: 'Head of Ops', check: (_r, today) => import('@/lib/ops-head').then(m => m.opsCheck(today)) }
+const salesHeadCheck: ScheduledCheck = { key: 'sales-head', label: 'Head of Sales', check: (_r, today) => import('@/lib/sales-head').then(m => m.salesCheck(today)) }
+const marketingHeadCheck: ScheduledCheck = { key: 'marketing-head', label: 'Head of Marketing', check: (_r, today) => import('@/lib/marketing-head').then(m => m.marketingCheck(today)) }
+
+export const SCHEDULED: ScheduledCheck[] = [overdueInvoiceCheck, financeHeadCheck, opsHeadCheck, salesHeadCheck, marketingHeadCheck]

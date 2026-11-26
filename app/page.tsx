@@ -332,14 +332,13 @@ async function LeavesTab({ today }: { today: string }) {
         </p>
         {b.rows.length ? (
           <table className="tbl leave-tbl">
-            <thead><tr><th>Name</th><th>Role</th><th>Annual left</th><th>MC left this month</th><th>Next leave</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Annual left</th><th>Next leave</th></tr></thead>
             <tbody>
               {b.rows.map(r => (
                 <tr key={r.id}>
                   <td data-label="Name"><Link href={`/hr/people/${r.id}`}><strong>{r.name}</strong></Link>{r.onLeaveToday ? <span className="tag-soft"> on leave</span> : null}</td>
                   <td data-label="Role">{r.position ?? ''}</td>
                   <td data-label="Annual left">{pill(r.annualLeft)}</td>
-                  <td data-label="MC left this month">{r.mcLeft} of 2</td>
                   <td data-label="Next leave">{r.nextLeave ? shortDate(r.nextLeave) : '–'}</td>
                 </tr>
               ))}
@@ -400,7 +399,7 @@ async function AttendanceTab({ day, today }: { day: string; today: string }) {
                   <td data-label="Flags">{r.flags.map(f => <span key={f} className="pill overdue" style={{ marginRight: 4 }}>{FLAG_LABEL[f] ?? f}</span>)}</td>
                   <td data-label="Photos">
                     {r.selfie ? <a href={r.selfie} target="_blank" rel="noreferrer"><img className="att-photo" src={r.selfie} alt="Selfie" /></a> : null}
-                    {r.shop ? <a href={r.shop} target="_blank" rel="noreferrer"><img className="att-photo" src={r.shop} alt="Shop" /></a> : null}
+                    {r.shop ? <a href={r.shop} target="_blank" rel="noreferrer"><img className="att-photo" src={r.shop} alt="Outlet photo" /></a> : null}
                   </td>
                   <td data-label="">{r.status === 'missing' || r.status === 'absent' ? <AbsentButton userId={r.userId} day={day} absent={r.status === 'absent'} /> : null}</td>
                 </tr>

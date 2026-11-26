@@ -130,7 +130,6 @@ export default async function Clock({ searchParams }: { searchParams: Promise<{ 
           <>
             <div className="grid" style={{ margin: '8px 0 0' }}>
               <div className="stat"><p className="l">Annual leave left</p><p className="v">{leave.annual === null ? 'not set' : `${leave.annual} day${leave.annual === 1 ? '' : 's'}`}</p></div>
-              <div className="stat"><p className="l">MC left this month</p><p className="v">{leave.mc} of {MC_PER_MONTH}</p></div>
             </div>
             <LeaveApply today={today} types={(types ?? []).map(t => ({ code: t.code, name: t.name }))} />
           </>

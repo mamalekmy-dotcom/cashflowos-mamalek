@@ -62,7 +62,7 @@ function Camera({ facing, label, photo, onChange }: { facing: 'user' | 'environm
     if (!navigator.mediaDevices?.getUserMedia) { setError('This browser has no camera access. Open the app in Chrome or Safari.'); return }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false })
       .then(live => { if (stopped) return live.getTracks().forEach(t => t.stop()); stream = live; if (video.current) video.current.srcObject = live })
-      .catch(() => setError('Allow camera access for this site, then try again.'))
+      .catch(() => setError('Camera is blocked. Tap "Use phone camera", or allow camera for this site and try again.'))
     return () => { stopped = true; stream?.getTracks().forEach(t => t.stop()) }
   }, [photo, facing])
   const frame = { width: '100%', borderRadius: 14, display: 'block', background: '#000', aspectRatio: '3 / 4', objectFit: 'cover' as const }
@@ -75,7 +75,22 @@ function Camera({ facing, label, photo, onChange }: { facing: 'user' | 'environm
           <img src={URL.createObjectURL(photo)} alt={label} style={frame} />
           <button className="btn ghost" type="button" onClick={() => onChange(null)} style={{ marginTop: 8, width: '100%' }}>Retake</button>
         </>
-      ) : error ? <p className="login-error">{error}</p> : (
+      ) : error ? (
+        <>
+          <p className="login-error">{error}</p>
+          <label className="btn" style={{ display: 'block', textAlign: 'center', marginTop: 8 }}>
+            Use phone camera
+            <input type="file" accept="image/*" capture={facing} hidden onChange={async e => {
+              const f = e.target.files?.[0]
+              if (!f) return
+              const img = new Image()
+              img.src = URL.createObjectURL(f)
+              await img.decode().catch(() => null)
+              onChange(img.naturalWidth ? await toJpeg(img, img.naturalWidth, img.naturalHeight) : f)
+            }} />
+          </label>
+        </>
+      ) : (
         <>
           <video ref={video} autoPlay playsInline muted style={{ ...frame, transform: facing === 'user' ? 'scaleX(-1)' : undefined }} />
           <button className="btn" type="button" style={{ marginTop: 8, width: '100%' }} onClick={async () => {
@@ -108,6 +123,7 @@ export default function PunchDial({ state, since, shiftPunches, breakAllowance }
   const [selfie, setSelfie] = useState<Blob | null>(null)
   const [shop, setShop] = useState<Blob | null>(null)
   const [takenAt, setTakenAt] = useState(0)
+  const [step, setStep] = useState<1 | 2>(1)
   const [status, setStatus] = useState('')
   const [message, setMessage] = useState('')
   const [pending, start] = useTransition()
@@ -121,7 +137,8 @@ export default function PunchDial({ state, since, shiftPunches, breakAllowance }
   const worked = state === 'off' ? 0 : workedMs(shiftPunches, now)
   const breakMs = state === 'break' && since ? now - Date.parse(since) : 0
   const shown = state === 'break' ? breakMs : worked
-  const clock = `${pad(Math.floor(shown / 3_600_000))}:${pad(Math.floor(shown / 60_000) % 60)}:${pad(Math.floor(shown / 1000) % 60)}`
+  const myTime = new Date(now).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', hour12: false })
+  const clock = state === 'off' ? myTime : `${pad(Math.floor(shown / 3_600_000))}:${pad(Math.floor(shown / 60_000) % 60)}:${pad(Math.floor(shown / 1000) % 60)}`
   const overBreak = state === 'break' && breakAllowance > 0 && breakMs > breakAllowance * 60_000
 
   async function send(kind: Kind) {
@@ -147,7 +164,7 @@ export default function PunchDial({ state, since, shiftPunches, breakAllowance }
       const r = await punch(form)
       setStatus('')
       setMessage(r.message)
-      if (r.ok) { setSheet(null); setSelfie(null); setShop(null); router.refresh() }
+      if (r.ok) { setSheet(null); setSelfie(null); setShop(null); setStep(1); router.refresh() }
     })
   }
 
@@ -170,7 +187,7 @@ export default function PunchDial({ state, since, shiftPunches, breakAllowance }
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') act(main) }} aria-label={hint}>
         <svg viewBox="0 0 200 200" className="dial-ring" aria-hidden="true"><circle cx="100" cy="100" r="92" /></svg>
         <span className="dial-time">{clock}</span>
-        <span className="dial-sub">{state === 'break' ? `break${breakAllowance ? ` of ${breakAllowance} min` : ''}` : state === 'on' ? 'worked today' : 'hold'}</span>
+        <span className="dial-sub">{state === 'break' ? `break${breakAllowance ? ` of ${breakAllowance} min` : ''}` : state === 'on' ? 'worked today' : 'Malaysia time'}</span>
       </button>
       <p className={`dial-title${overBreak ? ' warn' : ''}`}>{title}</p>
       <p className="cap" style={{ margin: 0, textAlign: 'center' }}>{pending ? status || 'Saving…' : hint}</p>
@@ -182,14 +199,17 @@ export default function PunchDial({ state, since, shiftPunches, breakAllowance }
         <div className="punch-sheet" role="dialog" aria-label="Photos for clock-in">
           <div className="punch-sheet-body">
             <p className="card-title">{sheet === 'in' ? 'Clock in' : 'Back from break'}: 2 photos</p>
-            <p className="cap" style={{ marginTop: 0 }}>A selfie, then a photo of anything inside the shop. Your location is checked when you send.</p>
-            <div className="cam-grid">
-              <Camera facing="user" label="1. Selfie" photo={selfie} onChange={setSelfie} />
-              <Camera facing="environment" label="2. Inside the shop" photo={shop} onChange={setShop} />
+            <p className="cap" style={{ marginTop: 0 }}>A selfie, then an outlet photo (anything inside the shop). Your location is checked when you send.</p>
+            <div className="cam-steps">
+              <button type="button" className={`cam-step${step === 1 ? ' on' : ''}`} onClick={() => setStep(1)}>{selfie ? '✓ ' : '1. '}Selfie</button>
+              <button type="button" className={`cam-step${step === 2 ? ' on' : ''}`} onClick={() => setStep(2)} disabled={!selfie}>{shop ? '✓ ' : '2. '}Outlet photo</button>
             </div>
+            {step === 1
+              ? <Camera key="selfie" facing="user" label="Selfie" photo={selfie} onChange={b => { setSelfie(b); if (b) setStep(2) }} />
+              : <Camera key="outlet" facing="environment" label="Outlet photo" photo={shop} onChange={setShop} />}
             {message ? <p className="login-error">{message}</p> : null}
             <div className="btnrow" style={{ marginTop: 12 }}>
-              <button type="button" className="btn ghost" disabled={pending} onClick={() => { setSheet(null); setSelfie(null); setShop(null) }}>Cancel</button>
+              <button type="button" className="btn ghost" disabled={pending} onClick={() => { setSheet(null); setSelfie(null); setShop(null); setStep(1) }}>Cancel</button>
               <button type="button" className="btn" disabled={pending || !selfie || !shop} style={{ flex: 1 }} onClick={() => send(sheet)}>
                 {pending ? status || 'Saving…' : sheet === 'in' ? 'Clock in' : 'End break'}
               </button>

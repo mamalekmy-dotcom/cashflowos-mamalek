@@ -493,3 +493,8 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .att-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .att-add .login-input { width: auto; flex: 1 1 140px; }
 @media (max-width: 520px) { .cam-grid { grid-template-columns: 1fr; } }
+
+.cam-steps { display: flex; gap: 8px; margin-bottom: 10px; }
+.cam-step { flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-weight: 600; cursor: pointer; }
+.cam-step.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.cam-step:disabled { opacity: .45; cursor: default; }

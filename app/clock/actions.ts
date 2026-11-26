@@ -86,7 +86,7 @@ export async function punch(form: FormData): Promise<Result> {
   const shop = photoOf(form, 'shopPhoto')
   if (needsProof) {
     if (!selfie) return fail('photo_missing', 'Take a selfie first.')
-    if (!shop) return fail('shop_missing', 'Take a photo of the shop too.')
+    if (!shop) return fail('shop_missing', 'Take the outlet photo too.')
     const takenAt = Number(form.get('takenAt'))
     if (!Number.isFinite(takenAt) || Date.now() - takenAt > PHOTO_MAX_AGE_MS || takenAt - Date.now() > 60_000) {
       return fail('photo_expired', 'Those photos are too old. Take fresh ones.')

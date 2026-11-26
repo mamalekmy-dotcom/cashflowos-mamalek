@@ -498,3 +498,25 @@ html[data-figures="hidden"] .tbl td[data-label="% of sales"] { filter: blur(7px)
 .cam-step { flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-weight: 600; cursor: pointer; }
 .cam-step.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
 .cam-step:disabled { opacity: .45; cursor: default; }
+
+/* ---- Doc Center ---- */
+.doc-page { max-width: 760px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 13px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.chip.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.doc-month { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.doc-month a { font-size: 22px; text-decoration: none; color: var(--ink); padding: 0 6px; }
+.doc-folders { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.doc-folder { display: block; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); text-decoration: none; color: var(--ink); }
+.doc-folder strong { display: block; font-size: 14px; }
+.doc-folder span { font-size: 12px; color: #6b6358; }
+.doc-folder.empty { opacity: .5; }
+.doc-folder.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.doc-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.doc-thumb { width: 44px; height: 54px; border-radius: 8px; border: 1px solid var(--line); overflow: hidden; display: flex; align-items: center; justify-content: center; flex: none; text-decoration: none; }
+.doc-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.doc-title { margin: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.doc-pages { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.doc-pages img, .doc-pdf { width: 44px; height: 54px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+.doc-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }

@@ -642,3 +642,11 @@ create table if not exists attendance_marks (
   unique (user_id, work_date, kind)
 );
 alter table attendance_marks enable row level security;
+
+-- Doc Center cabinet (26 Nov 2026): one of 8 folders per document, and its Drive copy.
+alter table documents add column if not exists category text not null default 'other';
+alter table documents add column if not exists title text;
+alter table documents add column if not exists drive_id text;
+alter table documents add column if not exists drive_link text;
+update documents set category = case kind when 'invoice' then 'supplier' when 'claim' then 'claim' else 'other' end where category = 'other';
+create index if not exists documents_category_idx on documents (category, doc_date);

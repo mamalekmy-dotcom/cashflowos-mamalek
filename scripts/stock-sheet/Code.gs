@@ -29,7 +29,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents)
     const secret = PropertiesService.getScriptProperties().getProperty('BOT_SECRET')
     if (!secret || req.secret !== secret) return out({ ok: false, error: 'forbidden' })
-    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport, saveInvoice, trashInvoice }[req.action]
+    const run = { context, addAlias, writeReceipt, setPrice, ensureMonth, syncOpening, stockFile, mgmtReport, saveInvoice, trashInvoice, saveDoc }[req.action]
     if (!run) return out({ ok: false, error: 'unknown action' })
     const lock = LockService.getScriptLock()
     lock.waitLock(25000)
@@ -324,6 +324,22 @@ function trashInvoice(req) {
     parent = parent.getParents().hasNext() ? parent.getParents().next() : null
   }
   throw new Error('That file is not in a Suppliers Invoices folder')
+}
+
+// Doc Center files (utilities, maintenance, claims, menus...): STOCK COUNT > Doc Center <year>
+// > folder > month, named "2026-11-24 TNB electricity RM2910.pdf".
+const DOC_FOLDERS = ['Claim', 'Utilities & Rental', 'Maintenance', 'Sales Report', 'Menu', 'Quotation & Market Research', 'Other']
+function saveDoc(req) {
+  if (!req.photo || !req.photo.base64) throw new Error('No file')
+  if (DOC_FOLDERS.indexOf(req.folder) < 0) throw new Error('Unknown folder')
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.date || '')) ? req.date : Utilities.formatDate(new Date(), 'Asia/Kuala_Lumpur', 'yyyy-MM-dd')
+  const root = subFolder(DriveApp.getFolderById(STOCK_COUNT_FOLDER_ID), 'Doc Center ' + day.slice(0, 4))
+  const folder = subFolder(subFolder(root, req.folder), MONTH_FOLDERS[Number(day.slice(5, 7)) - 1])
+  const ext = req.photo.mime === 'application/pdf' ? 'pdf' : req.photo.mime === 'image/png' ? 'png' : 'jpg'
+  const amount = Number(req.total) > 0 ? ' RM' + Math.round(Number(req.total) * 100) / 100 : ''
+  const name = day + ' ' + (fileSafe(req.title) || req.folder) + amount + '.' + ext
+  const file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(req.photo.base64), req.photo.mime, name))
+  return { link: file.getUrl(), fileId: file.getId() }
 }
 
 // One-off, run from the editor: rename "Suppliers Invoices" to "Suppliers Invoices 2026"

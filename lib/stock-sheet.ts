@@ -46,3 +46,6 @@ export const writeMgmtSheet = (body: { summary: (string | number)[][]; months: {
 // Bills to Google Drive on upload, and out again when rejected (same Apps Script).
 export const saveInvoice = (body: Record<string, unknown>) => call<{ fileId: string; link: string }>('saveInvoice', body)
 export const trashInvoice = (fileId: string) => call<{ trashed: boolean }>('trashInvoice', { fileId })
+// Doc Center files to Drive: STOCK COUNT › Doc Center <year> › folder › month (same Apps Script).
+export const saveDocFile = (body: { photo: { base64: string; mime: string }; date: string; folder: string; title: string; total: number | null }) =>
+  call<{ fileId: string; link: string }>('saveDoc', body)

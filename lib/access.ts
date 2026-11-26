@@ -44,6 +44,7 @@ export const GRANTABLE_TABS = [
   { href: '/suppliers', label: 'Suppliers' },
   { href: '/stock', label: 'Stock' },
   { href: '/scan', label: 'Scan invoices' },
+  { href: '/docs', label: 'Doc Center' },
   { href: '/chat', label: 'Chat' },
   { href: '/hr', label: 'HR (leave)' },
   // Module tabs still being built. They sit last so nobody lands on a page that

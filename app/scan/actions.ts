@@ -43,6 +43,7 @@ export async function scanDocument(form: FormData): Promise<Result> {
   if (bill) {
     const { data: doc, error } = await supabase.from('documents').insert({
       kind: 'invoice',
+      category: 'supplier',
       merchant: bill.supplier || null,
       doc_date: bill.date || null,
       amount: bill.total,
@@ -92,6 +93,7 @@ export async function submitClaim(amount: number, note: string, date: string): P
   if (!note.trim()) return { ok: false, message: 'Say what the claim is for.' }
   const { error } = await supabase.from('documents').insert({
     kind: 'claim',
+    category: 'claim',
     amount,
     note: note.trim(),
     doc_date: asDate(date),

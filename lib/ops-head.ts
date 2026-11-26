@@ -21,7 +21,7 @@ export async function opsReadout(today: string): Promise<Readout> {
     supabase.from('punches').select('user_id, kind, punched_at, flags').gte('punched_at', `${addDays(weekAgo, -1)}T16:00:00Z`).order('punched_at'),
     supabase.from('app_users').select('id, name'),
     supabase.from('agent_actions').select('id, agent_key, payload, proposed_at').eq('status', 'proposed')
-      .in('agent_key', ['stock-receipt', 'stock-draft', 'expense']).lt('proposed_at', `${addDays(today, -O.billWaitDays)}T00:00:00Z`),
+      .in('agent_key', ['stock-receipt', 'stock-draft', 'expense']).gt('expires_at', new Date().toISOString()).lt('proposed_at', `${addDays(today, -O.billWaitDays)}T00:00:00Z`),
     supabase.from('hr_leave_requests').select('id, person_id, leave_type, start_date, hr_people(name)').eq('status', 'pending')
       .lte('start_date', addDays(today, O.leaveWarnDays)),
     foodByMonth(today).catch(() => []),
